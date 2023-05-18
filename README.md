@@ -35,8 +35,8 @@ A simple CGI that accepts WebHooks from PagerDuty and updates the related Zabbix
 
 ## References
 
-- https://developer.pagerduty.com/docs/db0fa8c8984fc-overview
-- https://www.zabbix.com/documentation/current/en/manual/api
+- <https://developer.pagerduty.com/docs/db0fa8c8984fc-overview>
+- <https://www.zabbix.com/documentation/current/en/manual/api>
 
 ### Zabbix event actions
 
