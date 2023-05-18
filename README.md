@@ -4,11 +4,11 @@
 
 A simple CGI that accepts WebHooks from PagerDuty and updates the related Zabbix events.
 
-### DONE:
+### DONE
 
 -
 
-### TODO:
+### TODO
 
 - Run CGI
 - Config
@@ -33,12 +33,12 @@ A simple CGI that accepts WebHooks from PagerDuty and updates the related Zabbix
     - action: add message
     - message: link to PD incident?
 
-## References:
+## References
 
 - https://developer.pagerduty.com/docs/db0fa8c8984fc-overview
 - https://www.zabbix.com/documentation/current/en/manual/api
 
-### Zabbix event actions:
+### Zabbix event actions
 
 - 1 - close problem;
 - 2 - acknowledge event;
@@ -50,7 +50,7 @@ A simple CGI that accepts WebHooks from PagerDuty and updates the related Zabbix
 - 128 - change event rank to cause;
 - 256 - change event rank to symptom.
 
-### PagerDuty incident event types:
+### PagerDuty incident event types
 
 - incident.acknowledged
 - incident.annotated (note added)
