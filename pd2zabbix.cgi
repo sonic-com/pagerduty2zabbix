@@ -5,8 +5,35 @@ use CGI;
 use JSON;
 use LWP::UserAgent;
 use Data::Dumper;
+use AppConfig;
 
-my $DEBUG = 1;
+# Define the configuration file search paths
+my @config_paths = (
+    './.pagerduty2zabbix.conf',
+    '/pagerduty2zabbix.conf',
+    '/etc/pagerduty2zabbix/pagerduty2zabbix.conf',
+    '/etc/pagerduty2zabbix.conf',
+    "$ENV{HOME}/.pagerduty2zabbix.conf",
+);
+
+# Create a new AppConfig object
+my $config = AppConfig->new();
+
+$config->set_defaults(
+    'debug' => 1,
+);
+
+# Search for and load the first available configuration file
+my $found_config = 0;
+foreach my $config_path (@config_paths) {
+    if (-e $config_path) {
+        $config->file($config_path);
+        $found_config = 1;
+        last;
+    }
+}
+
+my $DEBUG = $config->param('debug');
 
 # TODO: find config
 # TODO: Parse config
@@ -26,7 +53,6 @@ if $DEBUG {
     print STDERR "POSTDATA:\n";
     print STDERR Dumper( $cgi->param('POSTDATA') );
 }
-
 
 # Read and parse the incoming PagerDuty webhook payload
 my $json_payload = $cgi->param('POSTDATA');
