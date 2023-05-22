@@ -64,3 +64,15 @@ A simple CGI that accepts WebHooks from PagerDuty and updates the related Zabbix
 - incident.status_update_published
 - incident.triggered (new incident)
 - incident.unacknowledged
+
+# Copyright & License
+
+This software is copyright (c) 2023, Sonic.net LLC, and Eric Eisenhart.  All rights reserved.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself. 
+ 
+ a) the GNU General Public License as published by the Free
+    Software Foundation; either version 1, or (at your option) any
+       later version, or
+ b) the "Artistic License"

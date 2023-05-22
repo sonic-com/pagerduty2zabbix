@@ -1,4 +1,14 @@
 #!/usr/bin/perl
+# This software is copyright (c) 2023, Sonic.net LLC, and Eric Eisenhart.
+# All rights reserved.
+# This is free software; you can redistribute it and/or modify it under
+# the same terms as the Perl 5 programming language system itself. 
+#  
+#  a) the GNU General Public License as published by the Free
+#     Software Foundation; either version 1, or (at your option) any
+#        later version, or
+#  b) the "Artistic License"
+
 use warnings;
 use strict;
 use CGI;
