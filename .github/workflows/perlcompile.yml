@@ -1,6 +1,6 @@
 # pagerduty2zabbix github Actions is copied from:
 #   https://github.com/perltidy/perltidy/blob/master/.github/workflows/perltest.yml
-name: CI
+name: perlcompile
  
 # This workflow will be triggered...
 #    on push to master branch
@@ -8,9 +8,9 @@ name: CI
 #    workflow_dispatch to trigger manually or via API call
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
   workflow_dispatch:
  
 # There is a single job here called "build" (The word "build" is NOT a keyword, you can use anything there)
@@ -37,7 +37,7 @@ jobs:
       # check out the current repository to the runner
       # This setp did not get a nice "name"
       - uses: actions/checkout@v2
- 
+
       # Using the action from this repository: https://github.com/shogo82148/actions-setup-perl/
       # Will set up the desired version of perl on the current OS.
       - name: Set up perl
@@ -47,10 +47,12 @@ jobs:
  
       # display the version of perl - just for possible manual verification
       - run: perl -V
+      
+      # Install a specific version of Test::Deep when testing with perl 5.10.0
+      - run: perl -e 'use 5.12.0;' || cpanm --install Test::Deep@1.130
 
       # Install the dependencies declared by the module ...
-      - run: cpanm --installdeps .
+      - run: cpanm --installdeps --skip-satisfied .
 
       # Verify it compiles:
       - run: perl -c pd2zabbix.cgi
-
