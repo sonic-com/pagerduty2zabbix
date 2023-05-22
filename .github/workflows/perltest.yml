@@ -49,8 +49,8 @@ jobs:
       - run: perl -V
 
       # Install the dependencies declared by the module ...
-      # There are no deps for perltidy, but this would be the command:
-      # - run: cpanm --installdeps .
+      - run: cpanm --installdeps .
 
-      # Run prove to execute the tests
-      - run: prove -lv t
+      # Verify it compiles:
+      - run: perl -c pd2zabbix.cgi
+
