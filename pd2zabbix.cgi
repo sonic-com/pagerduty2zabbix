@@ -5,35 +5,43 @@ use CGI;
 use JSON;
 use LWP::UserAgent;
 use Data::Dumper;
-use AppConfig;
+use AppConfig qw/:expand :argcount/;
+
+our $DEBUG = 0;
 
 # Define the configuration file search paths
 my @config_paths = (
     './.pagerduty2zabbix.conf',
-    '/pagerduty2zabbix.conf',
+    './pagerduty2zabbix.conf',
     '/etc/pagerduty2zabbix/pagerduty2zabbix.conf',
     '/etc/pagerduty2zabbix.conf',
-    "$ENV{HOME}/.pagerduty2zabbix.conf",
 );
 
 # Create a new AppConfig object
-my $config = AppConfig->new();
-
-$config->set_defaults(
-    'debug' => 1,
+my $config = AppConfig->new(
+   debug => {
+     DEFAULT => 1,
+     ARGCOUNT => ARGCOUNT_ONE
+   },
 );
+
 
 # Search for and load the first available configuration file
 my $found_config = 0;
 foreach my $config_path (@config_paths) {
     if (-e $config_path) {
+        warn("Reading config $config_path\n");
         $config->file($config_path);
         $found_config = 1;
         last;
     }
 }
-
-my $DEBUG = $config->param('debug');
+if ($found_config) {
+  $DEBUG = $config->param('debug');
+} else {
+  warn("No config found");
+  $DEBUG = 1;
+}
 
 # TODO: find config
 # TODO: Parse config
@@ -45,13 +53,13 @@ my $cgi = CGI->new();
 print $cgi->header();
 
 if ($DEBUG) {
-    print STDERR "Headers:\n";
+    warn "Headers:\n";
 
     for my $header ( $cgi->http() ) {
-        $DEBUG && print STDERR "$header: " . $cgi->http($header) . "\n";
+        warn "$header: " . $cgi->http($header) . "\n";
     }
-    print STDERR "POSTDATA:\n";
-    print STDERR Dumper( $cgi->param('POSTDATA') );
+    warn "POSTDATA:\n";
+    warn Dumper( $cgi->param('POSTDATA') );
 }
 
 # Read and parse the incoming PagerDuty webhook payload
@@ -70,7 +78,7 @@ print encode_json($response);
 # TODO: Also need to check that this event is for a zabbix install we're configured for...
 sub handle_pagerduty_webhook {
     my ($payload) = @_;
-    my $event = $payload->{'messages'}[0]->{'event'};
+    my $event = $payload->{'event'};
 
     # Check if the PagerDuty event is an incident acknowledgement
     if ($event->{'type'} eq 'incident.acknowledge') {
