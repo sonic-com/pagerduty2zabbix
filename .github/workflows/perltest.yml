@@ -37,6 +37,8 @@ jobs:
       # check out the current repository to the runner
       # This setp did not get a nice "name"
       - uses: actions/checkout@v2
+
+      - run: apt-get install --yes --ignore-missing libssl-dev libssl3 libssl1.1
  
       # Using the action from this repository: https://github.com/shogo82148/actions-setup-perl/
       # Will set up the desired version of perl on the current OS.
@@ -47,10 +49,12 @@ jobs:
  
       # display the version of perl - just for possible manual verification
       - run: perl -V
+      
+      # Install a specific version of Test::Deep when testing with perl 5.10.0
+      - run: perl -e 'use 5.12.0;' || cpanm --install Test::Deep@1.201
 
       # Install the dependencies declared by the module ...
-      - run: cpanm --installdeps .
+      - run: cpanm --installdeps --skip-satisfied .
 
       # Verify it compiles:
       - run: perl -c pd2zabbix.cgi
-
