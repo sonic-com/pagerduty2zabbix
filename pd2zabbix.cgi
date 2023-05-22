@@ -44,7 +44,7 @@ my $cgi = CGI->new();
 # Always tell PD we got the message right away:
 print $cgi->header();
 
-if $DEBUG {
+if ($DEBUG) {
     print STDERR "Headers:\n";
 
     for my $header ( $cgi->http() ) {
