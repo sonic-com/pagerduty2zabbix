@@ -49,7 +49,7 @@ jobs:
       - run: perl -V
       
       # Install a specific version of Test::Deep when testing with perl 5.10.0
-      - run: perl -e 'use 5.12.0;' || cpanm --install Test::Deep@1.201
+      - run: perl -e 'use 5.12.0;' || cpanm --install Test::Deep@1.130
 
       # Install the dependencies declared by the module ...
       - run: cpanm --installdeps --skip-satisfied .
