@@ -9,24 +9,20 @@ use AppConfig;
 
 # Define the configuration file search paths
 my @config_paths = (
-    './.pagerduty2zabbix.conf',
-    '/pagerduty2zabbix.conf',
-    '/etc/pagerduty2zabbix/pagerduty2zabbix.conf',
-    '/etc/pagerduty2zabbix.conf',
+    './.pagerduty2zabbix.conf',                    './pagerduty2zabbix.conf',
+    '/etc/pagerduty2zabbix/pagerduty2zabbix.conf', '/etc/pagerduty2zabbix.conf',
     "$ENV{HOME}/.pagerduty2zabbix.conf",
 );
 
 # Create a new AppConfig object
 my $config = AppConfig->new();
 
-$config->set_defaults(
-    'debug' => 1,
-);
+$config->set_defaults( 'debug' => 1, );
 
 # Search for and load the first available configuration file
 my $found_config = 0;
 foreach my $config_path (@config_paths) {
-    if (-e $config_path) {
+    if ( -e $config_path ) {
         $config->file($config_path);
         $found_config = 1;
         last;
@@ -56,7 +52,7 @@ if ($DEBUG) {
 
 # Read and parse the incoming PagerDuty webhook payload
 my $json_payload = $cgi->param('POSTDATA');
-my $payload = decode_json($json_payload);
+my $payload      = decode_json($json_payload);
 
 # Handle the PagerDuty webhook
 handle_pagerduty_webhook($payload);
@@ -73,11 +69,12 @@ sub handle_pagerduty_webhook {
     my $event = $payload->{'messages'}[0]->{'event'};
 
     # Check if the PagerDuty event is an incident acknowledgement
-    if ($event->{'type'} eq 'incident.acknowledge') {
-        my $incident_id = $event->{'incident'}->{'id'};
+    if ( $event->{'type'} eq 'incident.acknowledge' ) {
+        my $incident_id     = $event->{'incident'}->{'id'};
         my $zabbix_event_id = get_zabbix_event_id($incident_id);
 
         if ($zabbix_event_id) {
+
             # Update Zabbix event acknowledgement
             acknowledge_zabbix_event($zabbix_event_id);
         }
