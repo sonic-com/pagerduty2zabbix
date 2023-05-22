@@ -1,0 +1,16 @@
+<FilesMatch "\.*|.*.conf|\.git.*">
+  Order allow,deny
+</FilesMatch>
+
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine on
+
+  # Block access to hidden files
+  RewriteRule "(^|/)\." - [F]
+
+  # Block access to conf files
+  RewriteRule "conf" - [F]
+
+</IfModule>
