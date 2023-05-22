@@ -1,3 +1,7 @@
+## Config files we do not want showing up in git:
+pagerduty2zabbix.conf
+.pagerduty2zabbix.conf
+
 ## https://github.com/github/gitignore/blob/main/Global/Linux.gitignore
 *~
 
