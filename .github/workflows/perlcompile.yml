@@ -1,6 +1,6 @@
 # pagerduty2zabbix github Actions is copied from:
 #   https://github.com/perltidy/perltidy/blob/master/.github/workflows/perltest.yml
-name: CI
+name: perlcompile
  
 # This workflow will be triggered...
 #    on push to master branch
