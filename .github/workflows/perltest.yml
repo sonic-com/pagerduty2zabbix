@@ -38,8 +38,6 @@ jobs:
       # This setp did not get a nice "name"
       - uses: actions/checkout@v2
 
-      - run: apt-get install --yes --ignore-missing libssl-dev libssl3 libssl1.1
- 
       # Using the action from this repository: https://github.com/shogo82148/actions-setup-perl/
       # Will set up the desired version of perl on the current OS.
       - name: Set up perl
