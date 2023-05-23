@@ -4,3 +4,4 @@ requires 'LWP::UserAgent', '>= 6.15';
 requires 'LWP::Protocol::https';
 requires 'Data::Dumper';
 requires 'AppConfig', '>= 1.66';
+requires 'CGI::Carp', '>= 3.51';

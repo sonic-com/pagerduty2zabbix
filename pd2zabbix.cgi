@@ -15,6 +15,7 @@ use CGI;
 use JSON;
 use LWP::UserAgent;
 use Data::Dumper;
+use CGI::Carp qw(fatalsToBrowser);
 use AppConfig qw/:expand :argcount/;
 
 # https://www.zabbix.com/documentation/current/en/manual/api/reference/event/acknowledge#parameters
@@ -84,16 +85,12 @@ else {
     $DEBUG = 1;
 }
 
-# TODO: find config
-# TODO: Parse config
-# with AppConfig?
-
 our $cgi = CGI->new();
 
 our $ua = LWP::UserAgent->new( agent => 'pagerduty2zabbix (https://github.com/sonic-com/pagerduty2zabbix)' );
 
 # Always tell PD we got the message right away:
-print $cgi->header();
+#print $cgi->header();
 
 if ($DEBUG) {
     warn "Headers:\n";
@@ -125,7 +122,6 @@ print $cgi->header('application/json');
 print encode_json($response);
 
 # PagerDuty webhook handler
-# TODO: Also need to check that this event is for a zabbix install we're configured for...
 sub handle_pagerduty_webhook {
     my ($payload) = @_;
 
@@ -183,8 +179,16 @@ sub handle_pagerduty_webhook {
         }
 
     }
+    elsif ( $event_type eq 'incident.resolved' ) {
+        if ($zabbix_event_id) {
+            close_zabbix_event( $zabbix_event_id, $event, $event_details );
+        }
+        else {
+            die "Unable to determine zabbix event id";
+        }
+    }
 
-    #    "incident.annotated",
+    # PD event types we may want to handle:
     #    "incident.delegated",
     #    "incident.escalated",
     #    "incident.priority_updated",
@@ -194,7 +198,6 @@ sub handle_pagerduty_webhook {
     #    "incident.responder.added",
     #    "incident.responder.replied",
     #    "incident.status_update_published",
-    #    "incident.triggered",
 }
 
 sub get_event_details {
@@ -232,12 +235,9 @@ sub annotate_zabbix_event {
     );
     $DEBUG > 2 && warn( "Annotate params: " . Dumper( \%params ) );
     update_zabbix_event(%params);
-
-    # TODO:
-    # Implement your logic here to update the acknowledgement status of the Zabbix event
-    # You need to make API calls to Zabbix to update the event
 }
 
+# Update Zabbix event w/acknowledgement
 sub acknowledge_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
@@ -252,9 +252,6 @@ sub acknowledge_zabbix_event {
     $DEBUG > 2 && warn( "Ack params: " . Dumper( \%params ) );
     update_zabbix_event(%params);
 
-    # TODO:
-    # Implement your logic here to update the acknowledgement status of the Zabbix event
-    # You need to make API calls to Zabbix to update the event
 }
 
 # Update Zabbix event w/unacknowledgement
@@ -270,6 +267,27 @@ sub unacknowledge_zabbix_event {
         message  => $message
     );
     $DEBUG > 2 && warn( "Unack params: " . Dumper( \%params ) );
+    update_zabbix_event(%params);
+
+    # TODO:
+    # Implement your logic here to update the acknowledgement status of the Zabbix event
+    # You need to make API calls to Zabbix to update the event
+}
+
+# Update zabbix even with close/resolve.
+# Note: can only close some events and silently ignores when it can't.
+sub close_zabbix_event {
+    my ( $zabbix_event_id, $event, $event_details ) = @_;
+    my $who     = $event->{'agent'}{'summary'};
+    my $message = "Resolved in PD by $who";
+    $DEBUG && warn("Resolving Zabbix event $zabbix_event_id");
+
+    my %params = (
+        eventids => $zabbix_event_id,
+        action   => ZABBIX_CLOSE ^ ZABBIX_ADD_MSG,    # bit-math
+        message  => $message
+    );
+    $DEBUG > 2 && warn( "Ack params: " . Dumper( \%params ) );
     update_zabbix_event(%params);
 
     # TODO:
