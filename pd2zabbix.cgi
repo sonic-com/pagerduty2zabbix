@@ -17,6 +17,28 @@ use LWP::UserAgent;
 use Data::Dumper;
 use AppConfig qw/:expand :argcount/;
 
+# https://www.zabbix.com/documentation/current/en/manual/api/reference/event/acknowledge#parameters
+use constant {
+
+    # action bitmap values:
+    ZABBIX_CLOSE             => 1,
+    ZABBIX_ACK               => 2,
+    ZABBIX_ADD_MSG           => 4,
+    ZABBIX_CHANGE_SEVERITY   => 8,
+    ZABBIX_UNACK             => 16,
+    ZABBIX_SUPPRESS          => 32,
+    ZABBIX_UNSUPPRESS        => 64,
+    ZABBIX_CHANGE_TO_CAUSE   => 128,
+    ZABBIX_CHANGE_TO_SYMPTOP => 256,
+
+    ZABBIX_SEV_NOTCLASSIFIED => 0,
+    ZABBIX_SEV_INFORMATION   => 1,
+    ZABBIX_SEV_WARNING       => 2,
+    ZABBIX_SEV_AVERAGE       => 3,
+    ZABBIX_SEV_HIGH          => 4,
+    ZABBIX_SEV_DISASTER      => 5,
+};
+
 our $DEBUG = 0;
 
 # Define the configuration file search paths
@@ -125,7 +147,7 @@ sub handle_pagerduty_webhook {
         if ($zabbix_event_id) {
 
             # Update Zabbix event acknowledgement
-            acknowledge_zabbix_event($zabbix_event_id);
+            acknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
         }
         else {
             die "Unable to determine zabbix event id";
@@ -136,9 +158,6 @@ sub handle_pagerduty_webhook {
 sub get_event_details {
     my ($self_url) = @_;
     my $pdtoken = $config->get('pdtoken');
-
-    # curl --header "Authorization: Token token=u+VL5q2Kv2zgLJDfgmRg" \
-    #    "https://api.pagerduty.com/incidents/Q25OHYUWS2W4Z6?include[]=body"
 
     my $pd_response = $ua->get( "${self_url}?include[]=body", 'Authorization' => "Token token=${pdtoken}", );
     $DEBUG >= 3 && warn Dumper($pd_response);
@@ -157,16 +176,64 @@ sub get_event_details {
 sub get_zabbix_event_id {
     my ($event_details) = @_;
     return $event_details->{'body'}{'details'}{'dedup_key'};
-
-    # incident->body->details->dedup_key
 }
 
 # Update Zabbix event acknowledgement
 sub acknowledge_zabbix_event {
-    my ($zabbix_event_id) = @_;
+    my ( $zabbix_event_id, $event, $event_details ) = @_;
+    my $who     = $event->{'agent'}{'summary'};
+    my $message = "ACK'd in PD by $who";
     $DEBUG && warn("Acknowledging Zabbix event $zabbix_event_id");
+
+    my %params = (
+        eventids => $zabbix_event_id,
+        action   => ZABBIX_ACK ^ ZABBIX_ADD_MSG, # bit-math
+        message  => $message
+    );
+    $DEBUG >2 && warn("Ack params: ".Dumper(\%params));
+    update_zabbix_event(%params);
 
     # TODO:
     # Implement your logic here to update the acknowledgement status of the Zabbix event
     # You need to make API calls to Zabbix to update the event
 }
+
+# Update Zabbix event:
+sub update_zabbix_event {
+    my %params = @_;
+
+    $DEBUG && warn("Updating zabbix event\n");
+
+    # https://www.zabbix.com/documentation/current/en/manual/api
+    # https://www.zabbix.com/documentation/current/en/manual/api/reference/event/acknowledge
+    # curl --request POST \
+    #   --url 'https://example.com/zabbix/api_jsonrpc.php' \
+    #   --header 'Content-Type: application/json-rpc' \
+    #   --header 'Authorization: Bearer 0424bd59b807674191e7d77572075f33' \
+    #   --data '{"jsonrpc":"2.0","method":"apiinfo.version","params":{},"id":1}'
+
+    my $zabbixtoken   = $config->get('zabbixtoken');
+    my $zabbixbaseurl = $config->get('zabbixurl');
+    my $zabbixapiurl  = "$zabbixbaseurl/api_jsonrpc.php";
+
+    my %payload = (
+        jsonrpc => '2.0',
+        method  => 'event.acknowledge',
+        params  => \%params,
+        id      => 1,
+    );
+
+    my $json = encode_json( \%payload );
+    
+    $DEBUG >= 2 && warn("Zabbix API payload: $json\n");
+
+    my $zabbixresponse = $ua->post(
+        $zabbixapiurl,
+        'Content-Type'  => 'application/json-rpc',
+        'Authorization' => "Bearer $zabbixtoken",
+        Content         => $json,
+    );
+    
+    $DEBUG && warn(Dumper($zabbixresponse));
+}
+
