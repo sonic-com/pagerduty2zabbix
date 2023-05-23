@@ -1,0 +1,14 @@
+# send info to stderr?
+debug=0
+
+# auth token that has acccess to grab relevant incident details from PagerDuty
+pdtoken=abc1234
+
+# In PagerDuty Webhook config, add Custom Header named "Authentication" with this value:
+pdauthtoken=changeme
+
+# auth token that can update relevant events in zabbix
+zabbixtoken=xyz6789
+
+# zabbix URL for API
+zabbixurl=https://zabbix.example.com/zabbix

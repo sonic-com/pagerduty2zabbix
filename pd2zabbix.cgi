@@ -31,7 +31,20 @@ my @config_paths = qw(
 my $config = AppConfig->new(
     debug => {
         DEFAULT  => 1,
-        ARGCOUNT => ARGCOUNT_ONE
+        ARGCOUNT => ARGCOUNT_ONE,
+    },
+    pdtoken => {
+        ARGCOUNT => ARGCOUNT_ONE,
+    },
+    pdauthtoken => {
+        ARGCOUNT => ARGCOUNT_ONE,
+    }
+    zabbixtoken => {
+        ARGCOUNT => ARGCOUNT_ONE,
+    },
+    zabbixurl => {
+        DEFAULT => 'https://zabbix/zabbix',
+        ARGCOUNT => ARGCOUNT_ONE,
     },
 );
 
@@ -89,6 +102,7 @@ print encode_json($response);
 sub handle_pagerduty_webhook {
     my ($payload) = @_;
     my $event = $payload->{'event'};
+    my $eventdetails = get_event_details($event);
 
     # Check if the PagerDuty event is an incident acknowledgement
     if ( $event->{'type'} eq 'incident.acknowledge' ) {
@@ -101,6 +115,13 @@ sub handle_pagerduty_webhook {
             acknowledge_zabbix_event($zabbix_event_id);
         }
     }
+}
+
+sub get_zabbix_event_id {
+  my $event = shift;
+  my $selfurl = $payload->{'self'};
+  
+  
 }
 
 # Get the Zabbix event ID associated with a PagerDuty incident
