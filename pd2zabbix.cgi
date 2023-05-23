@@ -2,8 +2,8 @@
 # This software is copyright (c) 2023, Sonic.net LLC, and Eric Eisenhart.
 # All rights reserved.
 # This is free software; you can redistribute it and/or modify it under
-# the same terms as the Perl 5 programming language system itself. 
-#  
+# the same terms as the Perl 5 programming language system itself.
+#
 #  a) the GNU General Public License as published by the Free
 #     Software Foundation; either version 1, or (at your option) any
 #        later version, or
@@ -20,25 +20,25 @@ use AppConfig qw/:expand :argcount/;
 our $DEBUG = 0;
 
 # Define the configuration file search paths
-my @config_paths = (
-    './.pagerduty2zabbix.conf',
-    './pagerduty2zabbix.conf',
-    '/etc/pagerduty2zabbix/pagerduty2zabbix.conf',
-    '/etc/pagerduty2zabbix.conf',
+my @config_paths = qw(
+  .pagerduty2zabbix.conf
+  ./pagerduty2zabbix.conf
+  /etc/pagerduty2zabbix/pagerduty2zabbix.conf
+  /etc/pagerduty2zabbix.conf
 );
 
 # Create a new AppConfig object
 my $config = AppConfig->new(
-   debug => {
-     DEFAULT => 1,
-     ARGCOUNT => ARGCOUNT_ONE
-   },
+    debug => {
+        DEFAULT  => 1,
+        ARGCOUNT => ARGCOUNT_ONE
+    },
 );
 
 # Search for and load the first available configuration file
 my $found_config = 0;
 foreach my $config_path (@config_paths) {
-    if (-e $config_path) {
+    if ( -e $config_path ) {
         warn("Reading config $config_path\n");
         $config->file($config_path);
         $found_config = 1;
@@ -46,10 +46,11 @@ foreach my $config_path (@config_paths) {
     }
 }
 if ($found_config) {
-  $DEBUG = $config->param('debug');
-} else {
-  warn("No config found");
-  $DEBUG = 1;
+    $DEBUG = $config->param('debug');
+}
+else {
+    warn("No config found");
+    $DEBUG = 1;
 }
 
 # TODO: find config
