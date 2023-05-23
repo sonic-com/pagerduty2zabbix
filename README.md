@@ -6,10 +6,6 @@ A simple CGI that accepts WebHooks from PagerDuty and updates the related Zabbix
 
 ### DONE
 
--
-
-### TODO
-
 - Run CGI
 - Config
   - Find somewhere in /etc and include current dir somehow in what's used
@@ -19,6 +15,9 @@ A simple CGI that accepts WebHooks from PagerDuty and updates the related Zabbix
   - outgoing zabbix url/etc
 - Accept incoming webhook
 - Return `202 Accepted`
+
+### TODO
+
 - Verify auth on incoming webhook (token? webhook signature?)
 - Parse PD incident.acknowledged incoming event
   - Send Zabbix event.acknowledge for acknowledged incident
