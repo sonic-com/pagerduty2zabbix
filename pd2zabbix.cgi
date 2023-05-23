@@ -28,22 +28,16 @@ my @config_paths = qw(
 );
 
 # Create a new AppConfig object
-my $config = AppConfig->new(
+our $config = AppConfig->new(
     debug => {
         DEFAULT  => 1,
         ARGCOUNT => ARGCOUNT_ONE,
     },
-    pdtoken => {
-        ARGCOUNT => ARGCOUNT_ONE,
-    },
-    pdauthtoken => {
-        ARGCOUNT => ARGCOUNT_ONE,
-    }
-    zabbixtoken => {
-        ARGCOUNT => ARGCOUNT_ONE,
-    },
-    zabbixurl => {
-        DEFAULT => 'https://zabbix/zabbix',
+    pdtoken     => { ARGCOUNT => ARGCOUNT_ONE },
+    pdauthtoken => { ARGCOUNT => ARGCOUNT_ONE },
+    zabbixtoken => { ARGCOUNT => ARGCOUNT_ONE },
+    zabbixurl   => {
+        DEFAULT  => 'https://zabbix/zabbix',
         ARGCOUNT => ARGCOUNT_ONE,
     },
 );
@@ -58,10 +52,11 @@ foreach my $config_path (@config_paths) {
         last;
     }
 }
+
 if ($found_config) {
-    $DEBUG = $config->param('debug');
-}
-else {
+    $DEBUG = $config->get('debug');
+    $DEBUG >= 3 && warn(Dumper($config));
+} else {
     warn("No config found");
     $DEBUG = 1;
 }
@@ -70,7 +65,9 @@ else {
 # TODO: Parse config
 # with AppConfig?
 
-my $cgi = CGI->new();
+our $cgi = CGI->new();
+
+our $ua = LWP::UserAgent->new(agent => 'pagerduty2zabbix (https://github.com/sonic-com/pagerduty2zabbix)');
 
 # Always tell PD we got the message right away:
 print $cgi->header();
@@ -87,7 +84,14 @@ if ($DEBUG) {
 
 # Read and parse the incoming PagerDuty webhook payload
 my $json_payload = $cgi->param('POSTDATA');
+unless ($json_payload) {
+    die "No json_payload from webhook POSTDATA";
+}
+
 my $payload      = decode_json($json_payload);
+unless ($payload) {
+    die "Unable to parse json_payload into payload";
+}
 
 # Handle the PagerDuty webhook
 handle_pagerduty_webhook($payload);
@@ -100,43 +104,65 @@ print encode_json($response);
 # PagerDuty webhook handler
 # TODO: Also need to check that this event is for a zabbix install we're configured for...
 sub handle_pagerduty_webhook {
-    my ($payload) = @_;
-    my $event = $payload->{'event'};
-    my $eventdetails = get_event_details($event);
+    my ($payload)    = @_;
+
+    my $event        = $payload->{'event'};
+    $DEBUG >= 3 && warn("event: ".Dumper($event)."\n");
+    my $self_url     = $event->{'data'}{'self'};
+    $DEBUG && warn("self_url: $self_url\n");
+    my $html_url     = $event->{'data'}{'html_url'};
+    $DEBUG && warn("html_url: $html_url\n");
+
+    my $event_details = get_event_details($self_url);
+    my $zabbix_event_id = get_zabbix_event_id($event_details);
+
+    my $event_type = $event->{'event_type'};
+    $DEBUG && warn("event_type: $event_type\n");
 
     # Check if the PagerDuty event is an incident acknowledgement
-    if ( $event->{'type'} eq 'incident.acknowledge' ) {
-        my $incident_id     = $event->{'incident'}->{'id'};
-        my $zabbix_event_id = get_zabbix_event_id($incident_id);
-
+    if ( $event_type eq 'incident.acknowledged' ) {
         if ($zabbix_event_id) {
-
             # Update Zabbix event acknowledgement
             acknowledge_zabbix_event($zabbix_event_id);
+        } else {
+            die "Unable to determine zabbix event id";
         }
     }
 }
 
-sub get_zabbix_event_id {
-  my $event = shift;
-  my $selfurl = $payload->{'self'};
-  
-  
+sub get_event_details {
+    my ($self_url) = @_;
+    my $pdtoken = $config->get('pdtoken');
+    # curl --header "Authorization: Token token=u+VL5q2Kv2zgLJDfgmRg" \
+    #    "https://api.pagerduty.com/incidents/Q25OHYUWS2W4Z6?include[]=body"
+
+    my $pd_response = $ua->get(
+        "${self_url}?include[]=body",
+        'Authorization' => "Token token=${pdtoken}",
+    );    
+    $DEBUG >= 3 && warn Dumper($pd_response);
+    if ($pd_response->is_success) {
+        my $pd_json_content = $pd_response->content();
+        my $content = decode_json($pd_json_content);
+        return $content->{'incident'};
+    } else {
+        die "Unable to fetch details from PagerDuty";
+    }
+
 }
 
 # Get the Zabbix event ID associated with a PagerDuty incident
 sub get_zabbix_event_id {
-    my ($pagerduty_incident_id) = @_;
+    my ($event_details) = @_;
+    return $event_details->{'body'}{'details'}{'dedup_key'};
 
-    # TODO:
-    # Implement your logic here to retrieve the Zabbix event ID based on the PagerDuty incident ID
-    # You might need to make API calls to Zabbix to fetch the relevant information
-    # Return undef if no matching event is found
+    # incident->body->details->dedup_key
 }
 
 # Update Zabbix event acknowledgement
 sub acknowledge_zabbix_event {
     my ($zabbix_event_id) = @_;
+    $DEBUG && warn("Acknowledging Zabbix event $zabbix_event_id");
 
     # TODO:
     # Implement your logic here to update the acknowledgement status of the Zabbix event
