@@ -1,5 +1,6 @@
 <FilesMatch "\.*|.*.conf|\.git.*">
   Order allow,deny
+  deny from all
 </FilesMatch>
 
 Options -Indexes
