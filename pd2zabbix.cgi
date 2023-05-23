@@ -145,9 +145,16 @@ sub handle_pagerduty_webhook {
     # Check if the PagerDuty event is an incident acknowledgement
     if ( $event_type eq 'incident.acknowledged' ) {
         if ($zabbix_event_id) {
-
             # Update Zabbix event acknowledgement
             acknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
+        }
+        else {
+            die "Unable to determine zabbix event id";
+        }
+    } elsif ( $event_type eq 'incident.unacknowledged' ) {
+        if ($zabbix_event_id) {
+            # Update Zabbix event acknowledgement
+            unacknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
         }
         else {
             die "Unable to determine zabbix event id";
@@ -191,6 +198,26 @@ sub acknowledge_zabbix_event {
         message  => $message
     );
     $DEBUG >2 && warn("Ack params: ".Dumper(\%params));
+    update_zabbix_event(%params);
+
+    # TODO:
+    # Implement your logic here to update the acknowledgement status of the Zabbix event
+    # You need to make API calls to Zabbix to update the event
+}
+
+# Update Zabbix event acknowledgement
+sub unacknowledge_zabbix_event {
+    my ( $zabbix_event_id, $event, $event_details ) = @_;
+    my $who     = $event->{'agent'}{'summary'};
+    my $message = "un-ACK'd in PD by $who";
+    $DEBUG && warn("Unacknowledging Zabbix event $zabbix_event_id");
+
+    my %params = (
+        eventids => $zabbix_event_id,
+        action   => ZABBIX_UNACK ^ ZABBIX_ADD_MSG, # bit-math
+        message  => $message
+    );
+    $DEBUG >2 && warn("Unack params: ".Dumper(\%params));
     update_zabbix_event(%params);
 
     # TODO:
