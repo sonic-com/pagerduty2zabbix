@@ -55,8 +55,9 @@ foreach my $config_path (@config_paths) {
 
 if ($found_config) {
     $DEBUG = $config->get('debug');
-    $DEBUG >= 3 && warn(Dumper($config));
-} else {
+    $DEBUG >= 3 && warn( Dumper($config) );
+}
+else {
     warn("No config found");
     $DEBUG = 1;
 }
@@ -67,7 +68,7 @@ if ($found_config) {
 
 our $cgi = CGI->new();
 
-our $ua = LWP::UserAgent->new(agent => 'pagerduty2zabbix (https://github.com/sonic-com/pagerduty2zabbix)');
+our $ua = LWP::UserAgent->new( agent => 'pagerduty2zabbix (https://github.com/sonic-com/pagerduty2zabbix)' );
 
 # Always tell PD we got the message right away:
 print $cgi->header();
@@ -88,7 +89,7 @@ unless ($json_payload) {
     die "No json_payload from webhook POSTDATA";
 }
 
-my $payload      = decode_json($json_payload);
+my $payload = decode_json($json_payload);
 unless ($payload) {
     die "Unable to parse json_payload into payload";
 }
@@ -104,16 +105,16 @@ print encode_json($response);
 # PagerDuty webhook handler
 # TODO: Also need to check that this event is for a zabbix install we're configured for...
 sub handle_pagerduty_webhook {
-    my ($payload)    = @_;
+    my ($payload) = @_;
 
-    my $event        = $payload->{'event'};
-    $DEBUG >= 3 && warn("event: ".Dumper($event)."\n");
-    my $self_url     = $event->{'data'}{'self'};
+    my $event = $payload->{'event'};
+    $DEBUG >= 3 && warn( "event: " . Dumper($event) . "\n" );
+    my $self_url = $event->{'data'}{'self'};
     $DEBUG && warn("self_url: $self_url\n");
-    my $html_url     = $event->{'data'}{'html_url'};
+    my $html_url = $event->{'data'}{'html_url'};
     $DEBUG && warn("html_url: $html_url\n");
 
-    my $event_details = get_event_details($self_url);
+    my $event_details   = get_event_details($self_url);
     my $zabbix_event_id = get_zabbix_event_id($event_details);
 
     my $event_type = $event->{'event_type'};
@@ -122,9 +123,11 @@ sub handle_pagerduty_webhook {
     # Check if the PagerDuty event is an incident acknowledgement
     if ( $event_type eq 'incident.acknowledged' ) {
         if ($zabbix_event_id) {
+
             # Update Zabbix event acknowledgement
             acknowledge_zabbix_event($zabbix_event_id);
-        } else {
+        }
+        else {
             die "Unable to determine zabbix event id";
         }
     }
@@ -133,19 +136,18 @@ sub handle_pagerduty_webhook {
 sub get_event_details {
     my ($self_url) = @_;
     my $pdtoken = $config->get('pdtoken');
+
     # curl --header "Authorization: Token token=u+VL5q2Kv2zgLJDfgmRg" \
     #    "https://api.pagerduty.com/incidents/Q25OHYUWS2W4Z6?include[]=body"
 
-    my $pd_response = $ua->get(
-        "${self_url}?include[]=body",
-        'Authorization' => "Token token=${pdtoken}",
-    );    
+    my $pd_response = $ua->get( "${self_url}?include[]=body", 'Authorization' => "Token token=${pdtoken}", );
     $DEBUG >= 3 && warn Dumper($pd_response);
-    if ($pd_response->is_success) {
+    if ( $pd_response->is_success ) {
         my $pd_json_content = $pd_response->content();
-        my $content = decode_json($pd_json_content);
+        my $content         = decode_json($pd_json_content);
         return $content->{'incident'};
-    } else {
+    }
+    else {
         die "Unable to fetch details from PagerDuty";
     }
 
