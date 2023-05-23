@@ -63,7 +63,14 @@ our $config = AppConfig->new(
         DEFAULT  => 'https://zabbix/zabbix',
         ARGCOUNT => ARGCOUNT_ONE,
     },
-);
+    triggeredupdate => {
+        DEFAULT  => 1,
+        ARGCOUNT => ARGCOUNT_ONE,
+    },
+    resolvedupdate => {
+        DEFAULT  => 1,
+        ARGCOUNT => ARGCOUNT_ONE,
+    },);
 
 # Search for and load the first available configuration file
 my $found_config = 0;
@@ -139,7 +146,7 @@ sub handle_pagerduty_webhook {
     $DEBUG && warn("event_type: $event_type\n");
 
     # Do appropriate actions on incident event types:
-    if ( $event_type eq 'incident.triggered' ) {
+    if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate')) {
         if ($zabbix_event_id) {
             annotate_zabbix_event( $zabbix_event_id, $html_url );
         }
@@ -179,9 +186,17 @@ sub handle_pagerduty_webhook {
         }
 
     }
-    elsif ( $event_type eq 'incident.resolved' ) {
+    elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate')) {
         if ($zabbix_event_id) {
             close_zabbix_event( $zabbix_event_id, $event, $event_details );
+        }
+        else {
+            die "Unable to determine zabbix event id";
+        }
+    }
+    elsif ( $event_type eq 'incident.priority_updated' ) {
+        if ($zabbix_event_id) {
+            update_priority_zabbix_event( $zabbix_event_id, $event, $event_details );
         }
         else {
             die "Unable to determine zabbix event id";
@@ -194,7 +209,6 @@ sub handle_pagerduty_webhook {
     #    "incident.priority_updated",
     #    "incident.reassigned",
     #    "incident.reopened",
-    #    "incident.resolved",
     #    "incident.responder.added",
     #    "incident.responder.replied",
     #    "incident.status_update_published",
@@ -286,6 +300,37 @@ sub close_zabbix_event {
         eventids => $zabbix_event_id,
         action   => ZABBIX_CLOSE ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
+    );
+    $DEBUG > 2 && warn( "Ack params: " . Dumper( \%params ) );
+    update_zabbix_event(%params);
+
+    # TODO:
+    # Implement your logic here to update the acknowledgement status of the Zabbix event
+    # You need to make API calls to Zabbix to update the event
+}
+
+# Update zabbix event priority
+sub update_priority_zabbix_event {
+    my ( $zabbix_event_id, $event, $event_details ) = @_;
+    my $who     = $event->{'agent'}{'summary'};
+    my %priorities = (
+        P5 => ZABBIX_SEV_INFORMATION,
+        P4 => ZABBIX_SEV_WARNING,
+        P3 => ZABBIX_SEV_AVERAGE,
+        P2 => ZABBIX_SEV_HIGH,
+        P1 => ZABBIX_SEV_DISASTER,
+    );
+    my $pd_priority = $event->{'data'}{'priority'}{'summary'};
+    my $zabbix_severity = $priorities{$pd_priority} || ZABBIX_SEV_NOTCLASSIFIED;
+    my $message = "PD Priority changed to $pd_priority by $who";
+
+    $DEBUG && warn("Updating Zabbix event priority $zabbix_event_id to $pd_priority/$zabbix_severity");
+
+    my %params = (
+        eventids => $zabbix_event_id,
+        action   => ZABBIX_CHANGE_SEVERITY ^ ZABBIX_ADD_MSG,    # bit-math
+        message  => $message,
+        severity => $zabbix_severity,
     );
     $DEBUG > 2 && warn( "Ack params: " . Dumper( \%params ) );
     update_zabbix_event(%params);

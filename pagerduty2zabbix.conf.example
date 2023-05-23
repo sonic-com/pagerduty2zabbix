@@ -12,3 +12,9 @@ zabbixtoken=xyz6789
 
 # zabbix URL for API
 zabbixurl=https://zabbix.example.com/zabbix
+
+# Add a comment with URL of PD incident to zabbix event when first triggered?
+triggeredupdate=1
+
+# Allow PD to (try to) close zabbix events when a PD incident is marked resolved?
+resolvedupdate=1
