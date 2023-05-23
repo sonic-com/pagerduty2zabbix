@@ -142,24 +142,46 @@ sub handle_pagerduty_webhook {
     my $event_type = $event->{'event_type'};
     $DEBUG && warn("event_type: $event_type\n");
 
-    # Check if the PagerDuty event is an incident acknowledgement
-    if ( $event_type eq 'incident.acknowledged' ) {
+    # Do appropriate actions on incident event types:
+    if ( $event_type eq 'incident.triggered' ) {
         if ($zabbix_event_id) {
+            annotate_zabbix_event( $zabbix_event_id, $html_url );
+        }
+        else {
+            die "Unable to determine zabbix event id";
+        }
+
+    }
+    elsif ( $event_type eq 'incident.acknowledged' ) {
+        if ($zabbix_event_id) {
+
             # Update Zabbix event acknowledgement
             acknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
         }
         else {
             die "Unable to determine zabbix event id";
         }
-    } elsif ( $event_type eq 'incident.unacknowledged' ) {
+    }
+    elsif ( $event_type eq 'incident.unacknowledged' ) {
         if ($zabbix_event_id) {
-            # Update Zabbix event acknowledgement
             unacknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
         }
         else {
             die "Unable to determine zabbix event id";
         }
     }
+
+    #    "incident.annotated",
+    #    "incident.delegated",
+    #    "incident.escalated",
+    #    "incident.priority_updated",
+    #    "incident.reassigned",
+    #    "incident.reopened",
+    #    "incident.resolved",
+    #    "incident.responder.added",
+    #    "incident.responder.replied",
+    #    "incident.status_update_published",
+    #    "incident.triggered",
 }
 
 sub get_event_details {
@@ -185,7 +207,24 @@ sub get_zabbix_event_id {
     return $event_details->{'body'}{'details'}{'dedup_key'};
 }
 
-# Update Zabbix event acknowledgement
+# Update Zabbix notes/annotations
+sub annotate_zabbix_event {
+    my ( $zabbix_event_id, $message ) = @_;
+    $DEBUG && warn("Annotating Zabbix event $zabbix_event_id with message: $message");
+
+    my %params = (
+        eventids => $zabbix_event_id,
+        action   => ZABBIX_ADD_MSG,     # bit-math
+        message  => $message
+    );
+    $DEBUG > 2 && warn( "Annotate params: " . Dumper( \%params ) );
+    update_zabbix_event(%params);
+
+    # TODO:
+    # Implement your logic here to update the acknowledgement status of the Zabbix event
+    # You need to make API calls to Zabbix to update the event
+}
+
 sub acknowledge_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
@@ -194,10 +233,10 @@ sub acknowledge_zabbix_event {
 
     my %params = (
         eventids => $zabbix_event_id,
-        action   => ZABBIX_ACK ^ ZABBIX_ADD_MSG, # bit-math
+        action   => ZABBIX_ACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    $DEBUG >2 && warn("Ack params: ".Dumper(\%params));
+    $DEBUG > 2 && warn( "Ack params: " . Dumper( \%params ) );
     update_zabbix_event(%params);
 
     # TODO:
@@ -205,7 +244,7 @@ sub acknowledge_zabbix_event {
     # You need to make API calls to Zabbix to update the event
 }
 
-# Update Zabbix event acknowledgement
+# Update Zabbix event w/unacknowledgement
 sub unacknowledge_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
@@ -214,10 +253,10 @@ sub unacknowledge_zabbix_event {
 
     my %params = (
         eventids => $zabbix_event_id,
-        action   => ZABBIX_UNACK ^ ZABBIX_ADD_MSG, # bit-math
+        action   => ZABBIX_UNACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    $DEBUG >2 && warn("Unack params: ".Dumper(\%params));
+    $DEBUG > 2 && warn( "Unack params: " . Dumper( \%params ) );
     update_zabbix_event(%params);
 
     # TODO:
@@ -251,16 +290,30 @@ sub update_zabbix_event {
     );
 
     my $json = encode_json( \%payload );
-    
+
     $DEBUG >= 2 && warn("Zabbix API payload: $json\n");
 
-    my $zabbixresponse = $ua->post(
-        $zabbixapiurl,
-        'Content-Type'  => 'application/json-rpc',
-        'Authorization' => "Bearer $zabbixtoken",
-        Content         => $json,
-    );
-    
-    $DEBUG && warn(Dumper($zabbixresponse));
+    my $zabbixresponse;
+    my $zabbixretries = 0;
+    until ( $zabbixresponse && $zabbixresponse->is_success ) {
+        $zabbixresponse = $ua->post(
+            $zabbixapiurl,
+            'Content-Type'  => 'application/json-rpc',
+            'Authorization' => "Bearer $zabbixtoken",
+            Content         => $json,
+        );
+        $DEBUG && warn( Dumper($zabbixresponse) );
+
+        if ( $zabbixretries >= 10 ) {
+            warn Dumper($zabbixresponse);
+            die "Couldn't talk to zabbix API.";
+        }
+        else {
+            $zabbixretries++;
+            sleep($zabbixretries);
+        }
+    }
+
+    $DEBUG && warn( Dumper($zabbixresponse) );
 }
 
