@@ -131,9 +131,9 @@ sub handle_pagerduty_webhook {
 
     my $event = $payload->{'event'};
     $DEBUG >= 3 && warn( "event: " . Dumper($event) . "\n" );
-    my $self_url = $event->{'data'}{'self'};
+    my $self_url = ( $event->{'data'}{'self'} || $event->{'data'}{'incident'}{'self'} );
     $DEBUG && warn("self_url: $self_url\n");
-    my $html_url = $event->{'data'}{'html_url'};
+    my $html_url = ( $event->{'data'}{'html_url'} || $event->{'data'}{'incident'}{'html_url'} );
     $DEBUG && warn("html_url: $html_url\n");
 
     my $event_details   = get_event_details($self_url);
@@ -169,6 +169,19 @@ sub handle_pagerduty_webhook {
         else {
             die "Unable to determine zabbix event id";
         }
+    }
+    elsif ( $event_type eq 'incident.annotated' ) {
+        if ($zabbix_event_id) {
+            my $who     = $event->{'agent'}{'summary'};
+            my $content = $event->{'data'}{'content'};
+            my $message = "$content -$who";
+
+            annotate_zabbix_event( $zabbix_event_id, $message );
+        }
+        else {
+            die "Unable to determine zabbix event id";
+        }
+
     }
 
     #    "incident.annotated",
