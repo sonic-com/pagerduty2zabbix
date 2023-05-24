@@ -73,10 +73,13 @@ our $config = AppConfig->new(
 );
 
 # Search for and load the first available configuration file
-my $found_config = 0;
+my $found_config     = 0;
+my $config_path_used = '';
 foreach my $config_path (@config_paths) {
     if ( -e $config_path ) {
-        warn("Reading config $config_path\n");
+        $config_path_used = $config_path;
+
+        # warn("Reading config $config_path\n");
         $config->file($config_path);
         $found_config = 1;
         last;
@@ -85,7 +88,9 @@ foreach my $config_path (@config_paths) {
 
 if ($found_config) {
     $DEBUG = $config->get('debug');
-    $DEBUG >= 3 && warn( to_json( $config, { allow_blessed => 1 } ) );
+    $DEBUG && warn("Config used: $config_path_used\n");
+    my %vars = $config->varlist('.');
+    $DEBUG >= 3 && warn( "Config: " . to_json( \%vars ) . "\n" ) if $DEBUG >= 3;
 }
 else {
     warn("No config found");
@@ -99,7 +104,7 @@ our $ua = LWP::UserAgent->new( agent => 'pagerduty2zabbix (https://github.com/so
 # Always tell PD we got the message right away:
 #print $cgi->header();
 
-if ($DEBUG) {
+if ( $DEBUG >= 2 ) {
     warn "Headers:\n";
 
     for my $header ( $cgi->http() ) {
@@ -107,6 +112,24 @@ if ($DEBUG) {
     }
     warn "POSTDATA:\n";
     warn $cgi->param('POSTDATA');
+}
+
+# Authenticate (verify token received matches configured token)
+if ( $config->get('pdauthtoken') ) {
+    my $pdauthtoken  = $config->get('pdauthtoken');
+    my $pdauthheader = $cgi->http('Authentication');
+    $DEBUG >= 3 && warn("Auth header: $pdauthheader\n");
+    $DEBUG >= 3 && warn("Auth token config: $pdauthtoken\n");
+    if ( defined($pdauthheader) && $pdauthtoken eq $pdauthheader ) {
+        $DEBUG && warn("Auth token verified");
+    }
+    else {
+        print $cgi->header( -status => '401 Invalid Authentication Header' );
+        die("Auth header didn't match configured auth token");
+    }
+}
+else {
+    $DEBUG && warn("No stored auth token to verify.");
 }
 
 # Read and parse the incoming PagerDuty webhook payload
