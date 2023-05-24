@@ -104,12 +104,15 @@ our $ua = LWP::UserAgent->new( agent => 'pagerduty2zabbix (https://github.com/so
 # Always tell PD we got the message right away:
 #print $cgi->header();
 
-if ( $DEBUG >= 2 ) {
+if ( $DEBUG >= 5 ) {
     warn "Headers:\n";
 
     for my $header ( $cgi->http() ) {
         warn "$header: " . $cgi->http($header) . "\n";
     }
+}
+
+if ( $DEBUG >= 4 ) {
     warn "POSTDATA:\n";
     warn $cgi->param('POSTDATA');
 }
@@ -156,7 +159,7 @@ sub handle_pagerduty_webhook {
     my ($payload) = @_;
 
     my $event = $payload->{'event'};
-    $DEBUG >= 3 && warn( "event: " . to_json($event) . "\n" );
+    $DEBUG >= 2 && warn( "parsed event: " . to_json($event) . "\n" );
 
     my $event_type = $event->{'event_type'};
     $DEBUG && warn("event_type: $event_type\n");
@@ -168,9 +171,9 @@ sub handle_pagerduty_webhook {
     }
 
     my $self_url = ( $event->{'data'}{'self'} || $event->{'data'}{'incident'}{'self'} );
-    $DEBUG && warn("self_url: $self_url\n");
+    $DEBUG >= 2 && warn("self_url: $self_url\n");
     my $html_url = ( $event->{'data'}{'html_url'} || $event->{'data'}{'incident'}{'html_url'} );
-    $DEBUG && warn("html_url: $html_url\n");
+    $DEBUG >= 2 && warn("html_url: $html_url\n");
 
     my $event_details   = get_event_details($self_url);
     my $zabbix_event_id = get_zabbix_event_id($event_details);
@@ -249,7 +252,7 @@ sub get_event_details {
     my $pdtoken = $config->get('pdtoken');
 
     my $pd_response = $ua->get( "${self_url}?include[]=body", 'Authorization' => "Token token=${pdtoken}", );
-    $DEBUG >= 3 && warn to_json( $pd_response, { allow_blessed => 1 } );
+    $DEBUG >= 4 && warn to_json( $pd_response, { allow_blessed => 1 } );
     if ( $pd_response->is_success ) {
         my $pd_json_content = $pd_response->content();
         my $content         = decode_json($pd_json_content);
@@ -277,7 +280,7 @@ sub annotate_zabbix_event {
         action   => ZABBIX_ADD_MSG,     # bit-math
         message  => $message
     );
-    $DEBUG > 2 && warn( "Annotate params: " . to_json( \%params ) );
+    $DEBUG >= 2 && warn( "Annotate params: " . to_json( \%params ) );
     update_zabbix_event(%params);
 }
 
@@ -296,7 +299,7 @@ sub acknowledge_zabbix_event {
         action   => ZABBIX_ACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    $DEBUG > 2 && warn( "Ack params: " . to_json( \%params ) );
+    $DEBUG >= 2 && warn( "Ack params: " . to_json( \%params ) );
     update_zabbix_event(%params);
 
 }
@@ -316,7 +319,7 @@ sub unacknowledge_zabbix_event {
         action   => ZABBIX_UNACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    $DEBUG > 2 && warn( "Unack params: " . to_json( \%params ) );
+    $DEBUG >= 2 && warn( "Unack params: " . to_json( \%params ) );
     update_zabbix_event(%params);
 
     # TODO:
@@ -341,7 +344,7 @@ sub close_zabbix_event {
         action   => ZABBIX_CLOSE ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    $DEBUG > 2 && warn( "Ack params: " . to_json( \%params ) );
+    $DEBUG >= 2 && warn( "Ack params: " . to_json( \%params ) );
     update_zabbix_event(%params);
 
     # TODO:
@@ -375,7 +378,7 @@ sub update_priority_zabbix_event {
         message  => $message,
         severity => $zabbix_severity,
     );
-    $DEBUG > 2 && warn( "Ack params: " . to_json( \%params ) );
+    $DEBUG >= 2 && warn( "Ack params: " . to_json( \%params ) );
     update_zabbix_event(%params);
 
     # TODO:
@@ -387,7 +390,7 @@ sub update_priority_zabbix_event {
 sub update_zabbix_event {
     my %params = @_;
 
-    $DEBUG && warn("Updating zabbix event\n");
+    $DEBUG >= 2 && warn("Updating zabbix event\n");
 
     # https://www.zabbix.com/documentation/current/en/manual/api
     # https://www.zabbix.com/documentation/current/en/manual/api/reference/event/acknowledge
@@ -433,6 +436,5 @@ sub update_zabbix_event {
         }
     }
 
-    $DEBUG && warn( to_json( $zabbixresponse, { allow_blessed => 1 } ) );
+    $DEBUG >=4 && warn( to_json( $zabbixresponse, { allow_blessed => 1 } ) );
 }
-
