@@ -97,6 +97,8 @@ else {
     $DEBUG = 1;
 }
 
+warn("SECURITY WARNING: Logs may get sensitive data (auth tokens) with debug>=3\n") if $DEBUG >= 3;
+
 our $cgi = CGI->new();
 
 our $ua = LWP::UserAgent->new( agent => 'pagerduty2zabbix (https://github.com/sonic-com/pagerduty2zabbix)' );
