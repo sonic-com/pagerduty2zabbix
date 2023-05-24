@@ -36,6 +36,8 @@ and the others didn't seem important to have show up in Zabbix.
 ### Requirements
 - Zabbix 6.4+ (might work with older, I'm testing on 6.4)
 - perl 5.10+
+- valid SSL certs
+- some perl modules
 
 This CGI is stateless, so can easily be clustered for HA. Probably can run
 on same servers as zabbix-web, but we run it elsewhere because our Zabbix
@@ -53,13 +55,14 @@ servers are purely internal/VPN-only.
    On RHEL/CentOS/Rocky/Alma/Fedora, this probably looks like:
    ```bash
    yum install --skip-broken perl perl-CGI perl-JSON \
+       perl-JSON-XS perl-Cpanel-JSON-XS \
        perl-libwww-perl perl-LWP-Protocol-https perl-AppConfig 
    ```
 
    On Debian/Ubuntu, something like:
    ```bash
-   apt-get install perl libcgi-pm-perl libjson-perl libwww-perl \
-           liblwp-protocol-https-perl libappconfig-perl
+   apt-get install perl libcgi-pm-perl libjson-perl libjson-xs-perl \
+           libwww-perl liblwp-protocol-https-perl libappconfig-perl
    ```
 
    If you don't have packages available:
