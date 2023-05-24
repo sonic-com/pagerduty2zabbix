@@ -74,9 +74,11 @@ our $config = AppConfig->new(
 
 # Search for and load the first available configuration file
 my $found_config = 0;
+my $config_path_used = '';
 foreach my $config_path (@config_paths) {
     if ( -e $config_path ) {
-        warn("Reading config $config_path\n");
+        $config_path_used = $config_path;
+        # warn("Reading config $config_path\n");
         $config->file($config_path);
         $found_config = 1;
         last;
@@ -85,6 +87,7 @@ foreach my $config_path (@config_paths) {
 
 if ($found_config) {
     $DEBUG = $config->get('debug');
+    $DEBUG && warn("Config used: $config_path");
     $DEBUG >= 3 && warn( to_json( $config, { allow_blessed => 1 } ) );
 }
 else {
