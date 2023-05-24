@@ -31,10 +31,6 @@ If there's interest, could update Zabbix for "delegated", "escalated",
 "status_update_published".  I'm not sure how to even cause some of those,
 and the others didn't seem important to have show up in Zabbix.
 
-### TODO
-
-- Verify auth on incoming webhook (token? webhook signature?)
-
 ## Installation
 
 ### Requirements
