@@ -14,7 +14,6 @@ use strict;
 use CGI;
 use JSON;
 use LWP::UserAgent;
-use Data::Dumper;
 use CGI::Carp qw(fatalsToBrowser);
 use AppConfig qw/:expand :argcount/;
 
@@ -85,7 +84,7 @@ foreach my $config_path (@config_paths) {
 
 if ($found_config) {
     $DEBUG = $config->get('debug');
-    $DEBUG >= 3 && warn( Dumper($config) );
+    $DEBUG >= 3 && warn( to_json($config, {allow_blessed => 1}) );
 }
 else {
     warn("No config found");
@@ -106,7 +105,7 @@ if ($DEBUG) {
         warn "$header: " . $cgi->http($header) . "\n";
     }
     warn "POSTDATA:\n";
-    warn Dumper( $cgi->param('POSTDATA') );
+    warn $cgi->param('POSTDATA');
 }
 
 # Read and parse the incoming PagerDuty webhook payload
@@ -133,7 +132,15 @@ sub handle_pagerduty_webhook {
     my ($payload) = @_;
 
     my $event = $payload->{'event'};
-    $DEBUG >= 3 && warn( "event: " . Dumper($event) . "\n" );
+    $DEBUG >= 3 && warn( "event: " . to_json($event) . "\n" );
+
+    my $event_type = $event->{'event_type'};
+    $DEBUG && warn("event_type: $event_type\n");
+    
+    if ( $event_type eq 'pagey.ping' ) {
+      return 1;
+    }
+    
     my $self_url = ( $event->{'data'}{'self'} || $event->{'data'}{'incident'}{'self'} );
     $DEBUG && warn("self_url: $self_url\n");
     my $html_url = ( $event->{'data'}{'html_url'} || $event->{'data'}{'incident'}{'html_url'} );
@@ -142,8 +149,6 @@ sub handle_pagerduty_webhook {
     my $event_details   = get_event_details($self_url);
     my $zabbix_event_id = get_zabbix_event_id($event_details);
 
-    my $event_type = $event->{'event_type'};
-    $DEBUG && warn("event_type: $event_type\n");
 
     # Do appropriate actions on incident event types:
     if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate')) {
@@ -177,6 +182,7 @@ sub handle_pagerduty_webhook {
         if ($zabbix_event_id) {
             my $who     = $event->{'agent'}{'summary'};
             my $content = $event->{'data'}{'content'};
+            $who ||= "PD";
             my $message = "$content -$who";
 
             annotate_zabbix_event( $zabbix_event_id, $message );
@@ -206,7 +212,6 @@ sub handle_pagerduty_webhook {
     # PD event types we may want to handle:
     #    "incident.delegated",
     #    "incident.escalated",
-    #    "incident.priority_updated",
     #    "incident.reassigned",
     #    "incident.reopened",
     #    "incident.responder.added",
@@ -219,7 +224,7 @@ sub get_event_details {
     my $pdtoken = $config->get('pdtoken');
 
     my $pd_response = $ua->get( "${self_url}?include[]=body", 'Authorization' => "Token token=${pdtoken}", );
-    $DEBUG >= 3 && warn Dumper($pd_response);
+    $DEBUG >= 3 && warn to_json($pd_response, {allow_blessed => 1});
     if ( $pd_response->is_success ) {
         my $pd_json_content = $pd_response->content();
         my $content         = decode_json($pd_json_content);
@@ -247,7 +252,7 @@ sub annotate_zabbix_event {
         action   => ZABBIX_ADD_MSG,     # bit-math
         message  => $message
     );
-    $DEBUG > 2 && warn( "Annotate params: " . Dumper( \%params ) );
+    $DEBUG > 2 && warn( "Annotate params: " . to_json( \%params ) );
     update_zabbix_event(%params);
 }
 
@@ -255,7 +260,10 @@ sub annotate_zabbix_event {
 sub acknowledge_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
-    my $message = "ACK'd in PD by $who";
+    my $message = "ACK'd in PD";
+    if (defined $who) {
+      $message .= " by $who";
+    }
     $DEBUG && warn("Acknowledging Zabbix event $zabbix_event_id");
 
     my %params = (
@@ -263,7 +271,7 @@ sub acknowledge_zabbix_event {
         action   => ZABBIX_ACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    $DEBUG > 2 && warn( "Ack params: " . Dumper( \%params ) );
+    $DEBUG > 2 && warn( "Ack params: " . to_json( \%params ) );
     update_zabbix_event(%params);
 
 }
@@ -272,7 +280,10 @@ sub acknowledge_zabbix_event {
 sub unacknowledge_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
-    my $message = "un-ACK'd in PD by $who";
+    my $message = "un-ACK'd in PD"
+    if (defined $who) {
+      $message .= " by $who";
+    }
     $DEBUG && warn("Unacknowledging Zabbix event $zabbix_event_id");
 
     my %params = (
@@ -280,7 +291,7 @@ sub unacknowledge_zabbix_event {
         action   => ZABBIX_UNACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    $DEBUG > 2 && warn( "Unack params: " . Dumper( \%params ) );
+    $DEBUG > 2 && warn( "Unack params: " . to_json( \%params ) );
     update_zabbix_event(%params);
 
     # TODO:
@@ -293,7 +304,11 @@ sub unacknowledge_zabbix_event {
 sub close_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
-    my $message = "Resolved in PD by $who";
+    my $message = "Resolved in PD";
+    if (defined $who) {
+      $message .= " by $who";
+    }
+
     $DEBUG && warn("Resolving Zabbix event $zabbix_event_id");
 
     my %params = (
@@ -301,7 +316,7 @@ sub close_zabbix_event {
         action   => ZABBIX_CLOSE ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    $DEBUG > 2 && warn( "Ack params: " . Dumper( \%params ) );
+    $DEBUG > 2 && warn( "Ack params: " . to_json( \%params ) );
     update_zabbix_event(%params);
 
     # TODO:
@@ -322,7 +337,10 @@ sub update_priority_zabbix_event {
     );
     my $pd_priority = $event->{'data'}{'priority'}{'summary'};
     my $zabbix_severity = $priorities{$pd_priority} || ZABBIX_SEV_NOTCLASSIFIED;
-    my $message = "PD Priority changed to $pd_priority by $who";
+    my $message = "PD Priority changed to $pd_priority";
+    if (defined $who) {
+      $message .= " by $who";
+    }
 
     $DEBUG && warn("Updating Zabbix event priority $zabbix_event_id to $pd_priority/$zabbix_severity");
 
@@ -332,7 +350,7 @@ sub update_priority_zabbix_event {
         message  => $message,
         severity => $zabbix_severity,
     );
-    $DEBUG > 2 && warn( "Ack params: " . Dumper( \%params ) );
+    $DEBUG > 2 && warn( "Ack params: " . to_json( \%params ) );
     update_zabbix_event(%params);
 
     # TODO:
@@ -378,10 +396,10 @@ sub update_zabbix_event {
             'Authorization' => "Bearer $zabbixtoken",
             Content         => $json,
         );
-        $DEBUG && warn( Dumper($zabbixresponse) );
+        $DEBUG && warn( to_json($zabbixresponse, {allow_blessed => 1}) );
 
         if ( $zabbixretries >= 10 ) {
-            warn Dumper($zabbixresponse);
+            warn to_json($zabbixresponse, {allow_blessed => 1});
             die "Couldn't talk to zabbix API.";
         }
         else {
@@ -390,6 +408,6 @@ sub update_zabbix_event {
         }
     }
 
-    $DEBUG && warn( Dumper($zabbixresponse) );
+    $DEBUG && warn( to_json($zabbixresponse, {allow_blessed => 1}) );
 }
 
