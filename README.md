@@ -1,5 +1,10 @@
 # Pagerduty 2 Zabbix
 
+![perl compile](https://github.com/sonic-com/pagerduty2zabbix/actions/workflows/perlcompile.yml/badge.svg)
+![perltidy](https://github.com/sonic-com/pagerduty2zabbix/actions/workflows/perltidy.yml/badge.svg)
+![license: GPLv1+ or Artistic License](https://img.shields.io/badge/license-GPLv1%2B%20or%20Artistic%20License-green)
+![release](https://img.shields.io/github/v/release/sonic-com/pagerduty2zabbix?display_name=tag)
+
 https://github.com/sonic-com/pagerduty2zabbix
 
 ## What does it do?
