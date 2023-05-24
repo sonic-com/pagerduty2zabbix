@@ -69,7 +69,8 @@ our $config = AppConfig->new(
     resolvedupdate => {
         DEFAULT  => 1,
         ARGCOUNT => ARGCOUNT_ONE,
-    },);
+    },
+);
 
 # Search for and load the first available configuration file
 my $found_config = 0;
@@ -84,7 +85,7 @@ foreach my $config_path (@config_paths) {
 
 if ($found_config) {
     $DEBUG = $config->get('debug');
-    $DEBUG >= 3 && warn( to_json($config, {allow_blessed => 1}) );
+    $DEBUG >= 3 && warn( to_json( $config, { allow_blessed => 1 } ) );
 }
 else {
     warn("No config found");
@@ -136,11 +137,11 @@ sub handle_pagerduty_webhook {
 
     my $event_type = $event->{'event_type'};
     $DEBUG && warn("event_type: $event_type\n");
-    
+
     if ( $event_type eq 'pagey.ping' ) {
-      return 1;
+        return 1;
     }
-    
+
     my $self_url = ( $event->{'data'}{'self'} || $event->{'data'}{'incident'}{'self'} );
     $DEBUG && warn("self_url: $self_url\n");
     my $html_url = ( $event->{'data'}{'html_url'} || $event->{'data'}{'incident'}{'html_url'} );
@@ -149,9 +150,8 @@ sub handle_pagerduty_webhook {
     my $event_details   = get_event_details($self_url);
     my $zabbix_event_id = get_zabbix_event_id($event_details);
 
-
     # Do appropriate actions on incident event types:
-    if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate')) {
+    if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate') ) {
         if ($zabbix_event_id) {
             annotate_zabbix_event( $zabbix_event_id, $html_url );
         }
@@ -192,7 +192,7 @@ sub handle_pagerduty_webhook {
         }
 
     }
-    elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate')) {
+    elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate') ) {
         if ($zabbix_event_id) {
             close_zabbix_event( $zabbix_event_id, $event, $event_details );
         }
@@ -224,7 +224,7 @@ sub get_event_details {
     my $pdtoken = $config->get('pdtoken');
 
     my $pd_response = $ua->get( "${self_url}?include[]=body", 'Authorization' => "Token token=${pdtoken}", );
-    $DEBUG >= 3 && warn to_json($pd_response, {allow_blessed => 1});
+    $DEBUG >= 3 && warn to_json( $pd_response, { allow_blessed => 1 } );
     if ( $pd_response->is_success ) {
         my $pd_json_content = $pd_response->content();
         my $content         = decode_json($pd_json_content);
@@ -261,8 +261,8 @@ sub acknowledge_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
     my $message = "ACK'd in PD";
-    if (defined $who) {
-      $message .= " by $who";
+    if ( defined $who ) {
+        $message .= " by $who";
     }
     $DEBUG && warn("Acknowledging Zabbix event $zabbix_event_id");
 
@@ -281,8 +281,9 @@ sub unacknowledge_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
     my $message = "un-ACK'd in PD"
-    if (defined $who) {
-      $message .= " by $who";
+      if ( defined $who )
+    {
+        $message .= " by $who";
     }
     $DEBUG && warn("Unacknowledging Zabbix event $zabbix_event_id");
 
@@ -305,8 +306,8 @@ sub close_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
     my $message = "Resolved in PD";
-    if (defined $who) {
-      $message .= " by $who";
+    if ( defined $who ) {
+        $message .= " by $who";
     }
 
     $DEBUG && warn("Resolving Zabbix event $zabbix_event_id");
@@ -327,7 +328,7 @@ sub close_zabbix_event {
 # Update zabbix event priority
 sub update_priority_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
-    my $who     = $event->{'agent'}{'summary'};
+    my $who        = $event->{'agent'}{'summary'};
     my %priorities = (
         P5 => ZABBIX_SEV_INFORMATION,
         P4 => ZABBIX_SEV_WARNING,
@@ -335,11 +336,11 @@ sub update_priority_zabbix_event {
         P2 => ZABBIX_SEV_HIGH,
         P1 => ZABBIX_SEV_DISASTER,
     );
-    my $pd_priority = $event->{'data'}{'priority'}{'summary'};
+    my $pd_priority     = $event->{'data'}{'priority'}{'summary'};
     my $zabbix_severity = $priorities{$pd_priority} || ZABBIX_SEV_NOTCLASSIFIED;
-    my $message = "PD Priority changed to $pd_priority";
-    if (defined $who) {
-      $message .= " by $who";
+    my $message         = "PD Priority changed to $pd_priority";
+    if ( defined $who ) {
+        $message .= " by $who";
     }
 
     $DEBUG && warn("Updating Zabbix event priority $zabbix_event_id to $pd_priority/$zabbix_severity");
@@ -396,10 +397,10 @@ sub update_zabbix_event {
             'Authorization' => "Bearer $zabbixtoken",
             Content         => $json,
         );
-        $DEBUG && warn( to_json($zabbixresponse, {allow_blessed => 1}) );
+        $DEBUG && warn( to_json( $zabbixresponse, { allow_blessed => 1 } ) );
 
         if ( $zabbixretries >= 10 ) {
-            warn to_json($zabbixresponse, {allow_blessed => 1});
+            warn to_json( $zabbixresponse, { allow_blessed => 1 } );
             die "Couldn't talk to zabbix API.";
         }
         else {
@@ -408,6 +409,6 @@ sub update_zabbix_event {
         }
     }
 
-    $DEBUG && warn( to_json($zabbixresponse, {allow_blessed => 1}) );
+    $DEBUG && warn( to_json( $zabbixresponse, { allow_blessed => 1 } ) );
 }
 
