@@ -280,9 +280,8 @@ sub acknowledge_zabbix_event {
 sub unacknowledge_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
-    my $message = "un-ACK'd in PD"
-      if ( defined $who )
-    {
+    my $message = "un-ACK'd in PD";
+    if ( defined $who ) {
         $message .= " by $who";
     }
     $DEBUG && warn("Unacknowledging Zabbix event $zabbix_event_id");
