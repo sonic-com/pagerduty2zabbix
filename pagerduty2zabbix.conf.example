@@ -1,4 +1,10 @@
-# send info to stderr?
+# debug levels (each includes whatever's in prior level):
+# 0: only outputs if there's a problem (or for a ping test)
+# 1: basic output of what it's doing
+# 2: includes dumps of some data (kinda noisy)
+# 3: potentially outputs sensitive data (api and auth tokens)
+# 4: includes some bigger data dumps (very noisy)
+# 5: stuff only useful for development work
 debug=0
 
 # auth token that has acccess to grab relevant incident details from PagerDuty
