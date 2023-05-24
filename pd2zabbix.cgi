@@ -90,7 +90,7 @@ if ($found_config) {
     $DEBUG = $config->get('debug');
     $DEBUG && warn("Config used: $config_path_used\n");
     my %vars = $config->varlist('.');
-    $DEBUG >= 3 && warn( "Config: ". to_json( \%vars ) . "\n") if $DEBUG >= 3;
+    $DEBUG >= 3 && warn( "Config: " . to_json( \%vars ) . "\n" ) if $DEBUG >= 3;
 }
 else {
     warn("No config found");
@@ -124,7 +124,7 @@ if ( $config->get('pdauthtoken') ) {
         $DEBUG && warn("Auth token verified");
     }
     else {
-        print $cgi->header(-status=>'401 Invalid Authentication Header');
+        print $cgi->header( -status => '401 Invalid Authentication Header' );
         die("Auth header didn't match configured auth token");
     }
 }
