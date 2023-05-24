@@ -139,6 +139,8 @@ sub handle_pagerduty_webhook {
     $DEBUG && warn("event_type: $event_type\n");
 
     if ( $event_type eq 'pagey.ping' ) {
+        warn("pagey.pong\n");
+        warn( "event: " . to_json($event) . "\n" );
         return 1;
     }
 
