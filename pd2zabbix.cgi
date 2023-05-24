@@ -79,7 +79,6 @@ foreach my $config_path (@config_paths) {
     if ( -e $config_path ) {
         $config_path_used = $config_path;
 
-        # warn("Reading config $config_path\n");
         $config->file($config_path);
         $found_config = 1;
         last;
@@ -93,7 +92,7 @@ if ($found_config) {
     warn( "Config: " . to_json( \%vars ) . "\n" ) if $DEBUG >= 3;
 }
 else {
-    warn("No config found");
+    warn("No config found\n");
     $DEBUG = 1;
 }
 
@@ -116,7 +115,7 @@ if ( $DEBUG >= 5 ) {
 
 if ( $DEBUG >= 4 ) {
     warn "POSTDATA:\n";
-    warn $cgi->param('POSTDATA');
+    warn $cgi->param('POSTDATA') . "\n";
 }
 
 # Authenticate (verify token received matches configured token)
@@ -126,26 +125,26 @@ if ( $config->get('pdauthtoken') ) {
     warn("Auth header: $pdauthheader\n")      if $DEBUG >= 3;
     warn("Auth token config: $pdauthtoken\n") if $DEBUG >= 3;
     if ( defined($pdauthheader) && $pdauthtoken eq $pdauthheader ) {
-        warn("Auth token verified") if $DEBUG;
+        warn("Auth token verified\n") if $DEBUG;
     }
     else {
         print $cgi->header( -status => '401 Invalid Authentication Header' );
-        die("Auth header didn't match configured auth token");
+        die("Auth header didn't match configured auth token\n");
     }
 }
 else {
-    warn("No stored auth token to verify.") if $DEBUG;
+    warn("No stored auth token to verify.\n") if $DEBUG;
 }
 
 # Read and parse the incoming PagerDuty webhook payload
 my $json_payload = $cgi->param('POSTDATA');
 unless ($json_payload) {
-    die "No json_payload from webhook POSTDATA";
+    die "No json_payload from webhook POSTDATA\n";
 }
 
 my $payload = decode_json($json_payload);
 unless ($payload) {
-    die "Unable to parse json_payload into payload";
+    die "Unable to parse json_payload into payload\n";
 }
 
 # Handle the PagerDuty webhook
@@ -168,7 +167,7 @@ sub handle_pagerduty_webhook {
 
     if ( $event_type eq 'pagey.ping' ) {
         warn("pagey.pong\n");
-        warn( "event: " . to_json($event) . "\n" );
+        warn( "event: " . to_json($event) );
         return 1;
     }
 
@@ -254,14 +253,14 @@ sub get_event_details {
     my $pdtoken = $config->get('pdtoken');
 
     my $pd_response = $ua->get( "${self_url}?include[]=body", 'Authorization' => "Token token=${pdtoken}", );
-    warn to_json( $pd_response, { allow_blessed => 1 } ) if $DEBUG >= 4;
+    warn( to_json( $pd_response, { allow_blessed => 1 } ) ) if $DEBUG >= 4;
     if ( $pd_response->is_success ) {
         my $pd_json_content = $pd_response->content();
         my $content         = decode_json($pd_json_content);
         return $content->{'incident'};
     }
     else {
-        die "Unable to fetch details from PagerDuty";
+        die "Unable to fetch details from PagerDuty\n";
     }
 
 }
@@ -275,14 +274,14 @@ sub get_zabbix_event_id {
 # Update Zabbix notes/annotations
 sub annotate_zabbix_event {
     my ( $zabbix_event_id, $message ) = @_;
-    warn("Annotating Zabbix event $zabbix_event_id with message: $message") if $DEBUG;
+    warn("Annotating Zabbix event $zabbix_event_id with message: $message\n") if $DEBUG;
 
     my %params = (
         eventids => $zabbix_event_id,
         action   => ZABBIX_ADD_MSG,     # bit-math
         message  => $message
     );
-    warn( "Annotate params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    warn( "update_zabbix_event params: " . to_json( \%params ) ) if $DEBUG >= 2;
     update_zabbix_event(%params);
 }
 
@@ -294,14 +293,14 @@ sub acknowledge_zabbix_event {
     if ( defined $who ) {
         $message .= " by $who";
     }
-    warn("Acknowledging Zabbix event $zabbix_event_id") if $DEBUG;
+    warn("Acknowledging Zabbix event $zabbix_event_id\n") if $DEBUG;
 
     my %params = (
         eventids => $zabbix_event_id,
         action   => ZABBIX_ACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    warn( "Ack params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    warn( "update_zabbix_event params: " . to_json( \%params ) ) if $DEBUG >= 2;
     update_zabbix_event(%params);
 
 }
@@ -314,14 +313,14 @@ sub unacknowledge_zabbix_event {
     if ( defined $who ) {
         $message .= " by $who";
     }
-    warn("Unacknowledging Zabbix event $zabbix_event_id") if $DEBUG;
+    warn("Unacknowledging Zabbix event $zabbix_event_id\n") if $DEBUG;
 
     my %params = (
         eventids => $zabbix_event_id,
         action   => ZABBIX_UNACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    warn( "Unack params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    warn( "update_zabbix_event params: " . to_json( \%params ) ) if $DEBUG >= 2;
     update_zabbix_event(%params);
 
     # TODO:
@@ -339,14 +338,14 @@ sub close_zabbix_event {
         $message .= " by $who";
     }
 
-    warn("Resolving Zabbix event $zabbix_event_id") if $DEBUG;
+    warn("Resolving Zabbix event $zabbix_event_id\n") if $DEBUG;
 
     my %params = (
         eventids => $zabbix_event_id,
         action   => ZABBIX_CLOSE ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    warn( "Ack params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    warn( "update_zabbix_event params: " . to_json( \%params ) ) if $DEBUG >= 2;
     update_zabbix_event(%params);
 
     # TODO:
@@ -372,7 +371,7 @@ sub update_priority_zabbix_event {
         $message .= " by $who";
     }
 
-    warn("Updating Zabbix event priority $zabbix_event_id to $pd_priority/$zabbix_severity") if $DEBUG;
+    warn("Updating Zabbix event priority $zabbix_event_id to $pd_priority/$zabbix_severity\n") if $DEBUG;
 
     my %params = (
         eventids => $zabbix_event_id,
@@ -380,7 +379,7 @@ sub update_priority_zabbix_event {
         message  => $message,
         severity => $zabbix_severity,
     );
-    warn( "Ack params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    warn( "update_zabbix_event params: " . to_json( \%params ) ) if $DEBUG >= 2;
     update_zabbix_event(%params);
 
     # TODO:
@@ -430,7 +429,7 @@ sub update_zabbix_event {
 
         if ( $zabbixretries >= 10 ) {
             warn to_json( $zabbixresponse, { allow_blessed => 1 } );
-            die "Couldn't talk to zabbix API.";
+            die "Couldn't talk to zabbix API after $zabbixretries attempts.\n";
         }
         else {
             $zabbixretries++;
