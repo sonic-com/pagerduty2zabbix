@@ -154,13 +154,13 @@ unless ($payload) {
 }
 
 # Handle the PagerDuty webhook
-handle_pagerduty_webhook($payload);
+pagerduty_handle_webhook($payload);
 
 # Send a response back to PagerDuty
 print $cgi->header( -status => '202 Accepted Complete Success' );
 
 # PagerDuty webhook handler
-sub handle_pagerduty_webhook {
+sub pagerduty_handle_webhook {
     my ($payload) = @_;
 
     my $event = $payload->{'event'};
@@ -180,8 +180,8 @@ sub handle_pagerduty_webhook {
     my $html_url = ( $event->{'data'}{'html_url'} || $event->{'data'}{'incident'}{'html_url'} );
     warn("html_url: $html_url\n") if $DEBUG >= 2;
 
-    my $event_details   = get_event_details($self_url);
-    my $zabbix_event_id = get_zabbix_event_id($event_details);
+    my $event_details   = pagerduty_get_event_details($self_url);
+    my $zabbix_event_id = zabbix_get_event_id($event_details);
 
     unless ($zabbix_event_id) {
         print $cgi->header( -status => "429 Can't determine zabbix event id; retry" );
@@ -192,17 +192,17 @@ sub handle_pagerduty_webhook {
     if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate') ) {
 
         # Add PD incident URL as comment on Zabbix event:
-        annotate_zabbix_event( $zabbix_event_id, $html_url );
+        zabbix_event_annotate( $zabbix_event_id, $html_url );
     }
     elsif ( $event_type eq 'incident.acknowledged' ) {
 
         # Update Zabbix event acknowledgement
-        acknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
+        zabbix_event_acknowledge( $zabbix_event_id, $event, $event_details );
     }
     elsif ( $event_type eq 'incident.unacknowledged' ) {
 
         # Clear acknowledgement from zabbix event
-        unacknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
+        zabbix_event_unacknowledge( $zabbix_event_id, $event, $event_details );
     }
     elsif ( $event_type eq 'incident.annotated' ) {
 
@@ -212,17 +212,17 @@ sub handle_pagerduty_webhook {
         $who ||= "PD";
         my $message = "$content -$who";
 
-        annotate_zabbix_event( $zabbix_event_id, $message );
+        zabbix_event_annotate( $zabbix_event_id, $message );
     }
     elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate') ) {
 
         # Send event close attempt to Zabbix
-        close_zabbix_event( $zabbix_event_id, $event, $event_details );
+        zabbix_event_close( $zabbix_event_id, $event, $event_details );
     }
     elsif ( $event_type eq 'incident.priority_updated' ) {
 
         # Update Zabbix event severity if PD incident priority changed
-        update_priority_zabbix_event( $zabbix_event_id, $event, $event_details );
+        zabbix_event_update_priority( $zabbix_event_id, $event, $event_details );
     }
 
     # PD event types we may want to handle:
@@ -235,7 +235,7 @@ sub handle_pagerduty_webhook {
     #    "incident.status_update_published",
 }
 
-sub get_event_details {
+sub pagerduty_get_event_details {
     my ($self_url) = @_;
     my $pdtoken = $config->get('pdtoken');
 
@@ -253,13 +253,13 @@ sub get_event_details {
 }
 
 # Get the Zabbix event ID associated with a PagerDuty incident
-sub get_zabbix_event_id {
+sub zabbix_get_event_id {
     my ($event_details) = @_;
     return $event_details->{'body'}{'details'}{'dedup_key'};
 }
 
 # Update Zabbix notes/annotations
-sub annotate_zabbix_event {
+sub zabbix_event_annotate {
     my ( $zabbix_event_id, $message ) = @_;
     warn("Annotating Zabbix event $zabbix_event_id with message: $message\n") if $DEBUG;
 
@@ -268,12 +268,12 @@ sub annotate_zabbix_event {
         action   => ZABBIX_ADD_MSG,     # bit-math
         message  => $message
     );
-    warn( "update_zabbix_event params: " . to_json( \%params ) ) if $DEBUG >= 2;
-    update_zabbix_event(%params);
+    warn( "zabbix_event_update params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    zabbix_event_update(%params);
 }
 
 # Update Zabbix event w/acknowledgement
-sub acknowledge_zabbix_event {
+sub zabbix_event_acknowledge {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
     my $message = "ACK'd in PD";
@@ -287,13 +287,13 @@ sub acknowledge_zabbix_event {
         action   => ZABBIX_ACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    warn( "update_zabbix_event params: " . to_json( \%params ) ) if $DEBUG >= 2;
-    update_zabbix_event(%params);
+    warn( "zabbix_event_update params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    zabbix_event_update(%params);
 
 }
 
 # Update Zabbix event w/unacknowledgement
-sub unacknowledge_zabbix_event {
+sub zabbix_event_unacknowledge {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
     my $message = "un-ACK'd in PD";
@@ -307,8 +307,8 @@ sub unacknowledge_zabbix_event {
         action   => ZABBIX_UNACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    warn( "update_zabbix_event params: " . to_json( \%params ) ) if $DEBUG >= 2;
-    update_zabbix_event(%params);
+    warn( "zabbix_event_update params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    zabbix_event_update(%params);
 
     # TODO:
     # Implement your logic here to update the acknowledgement status of the Zabbix event
@@ -317,7 +317,7 @@ sub unacknowledge_zabbix_event {
 
 # Update zabbix even with close/resolve.
 # Note: can only close some events and silently ignores when it can't.
-sub close_zabbix_event {
+sub zabbix_event_close {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
     my $message = "Resolved in PD";
@@ -332,8 +332,8 @@ sub close_zabbix_event {
         action   => ZABBIX_CLOSE ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    warn( "update_zabbix_event params: " . to_json( \%params ) ) if $DEBUG >= 2;
-    update_zabbix_event(%params);
+    warn( "zabbix_event_update params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    zabbix_event_update(%params);
 
     # TODO:
     # Implement your logic here to update the acknowledgement status of the Zabbix event
@@ -341,7 +341,7 @@ sub close_zabbix_event {
 }
 
 # Update zabbix event priority
-sub update_priority_zabbix_event {
+sub zabbix_event_update_priority {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who        = $event->{'agent'}{'summary'};
     my %priorities = (
@@ -366,8 +366,8 @@ sub update_priority_zabbix_event {
         message  => $message,
         severity => $zabbix_severity,
     );
-    warn( "update_zabbix_event params: " . to_json( \%params ) ) if $DEBUG >= 2;
-    update_zabbix_event(%params);
+    warn( "zabbix_event_update params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    zabbix_event_update(%params);
 
     # TODO:
     # Implement your logic here to update the acknowledgement status of the Zabbix event
@@ -375,7 +375,7 @@ sub update_priority_zabbix_event {
 }
 
 # Update Zabbix event:
-sub update_zabbix_event {
+sub zabbix_event_update {
     my %params = @_;
 
     warn("Updating zabbix event\n") if $DEBUG >= 2;
