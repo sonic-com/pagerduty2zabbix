@@ -15,7 +15,7 @@ from PagerDuty.
 
 - PagerDuty incident "acknowledged" will Acknowledge the Zabbix Event and
   add a comment of who acknowledged it.
-- PagerDuty incident "unacknowledged" will Unacknowledge the Zabbix Event 
+- PagerDuty incident "unacknowledged" will Unacknowledge the Zabbix Event
   and add a comment of who unacknowledged it.
 - PagerDuty incident "annotated" (Add Note) will add a note to the Zabbix
   Event "signed by" the person who made the note.
@@ -31,8 +31,6 @@ If there's interest, could update Zabbix for "delegated", "escalated",
 "status_update_published".  I'm not sure how to even cause some of those,
 and the others didn't seem important to have show up in Zabbix.
 
-## Installation
-
 ### Requirements
 - Zabbix 6.4+ (might work with older, I'm testing on 6.4)
 - perl 5.10+
@@ -43,9 +41,11 @@ This CGI is stateless, so can easily be clustered for HA. Probably can run
 on same servers as zabbix-web, but we run it elsewhere because our Zabbix
 servers are purely internal/VPN-only.
 
+## Installation
+
 1. Install a web server.
 2. Configure web server to be able to run CGIs.
-3. Either `git clone` this yum repo into someplace you can run CGIs from 
+3. Either `git clone` this yum repo into someplace you can run CGIs from
    _or_ copy pd2zabbix.cgi to someplace you can run CGIs from.
    ```bash
    git clone https://github.com/sonic-com/pagerduty2zabbix.git
@@ -56,7 +56,7 @@ servers are purely internal/VPN-only.
    ```bash
    yum install --skip-broken perl perl-CGI perl-JSON \
        perl-JSON-XS perl-Cpanel-JSON-XS \
-       perl-libwww-perl perl-LWP-Protocol-https perl-AppConfig 
+       perl-libwww-perl perl-LWP-Protocol-https perl-AppConfig
    ```
 
    On Debian/Ubuntu, something like:
@@ -71,22 +71,29 @@ servers are purely internal/VPN-only.
    cpanm --installdeps . # This should read cpanfile
    ```
 5. Verify you have appropriate perl modules installed with `perl -c pd2zabbix.cgi`
-6. Verify your CGI config is correct with web browser or `curl` on the URL for 
+6. Verify your CGI config is correct with web browser or `curl` on the URL for
    pd2zabbix.cgi. If it's working right, it should give an error that includes:
    ```
    No json_payload from webhook POSTDATA
    ```
 7. Configure Zabbix to send alerts to PagerDuty with the Zabbix WebHook included with recent Zabbix versions.
-   
+
+   **Important**: Use the generic-sounding "Events API v2" and _not_ the Zabbix-branded one.
+   Or create an Orchestration Rule (under Automation) that routes to your Zabbix service and
+   use an integration key from there.
+   (As of May 2023, if you use the Zabbix-branded integration, key information vanishes somewhere
+   in PagerDuty and pagerduty2zabbix can't work out the zabbix event id)
+
    If you've updated Zabbix, this may need to be updated to a version of
-   the script that sets pagerduty "dedup_key" to zabbix "eventid".)
+   the script that sets pagerduty "dedup_key" to zabbix "eventid".
 
    I recommend setting the `token` in the `Media type` to `{ALERT.SENDTO}`
    and putting your PagerDuty API token into "Send to" of the user's media
-   configuration.
+   configuration. (so you have the easy option of additional PD integrations for different teams, etc)
 6. Copy pagerduty2zabbix.conf.example to ./pagerduty2zabbix.conf or /etc/pagerduty2zabbix.conf
 7. Edit pagerduty2zabbix.conf:
-   - Get a token from PagerDuty that can update the relevant PagerDuty events and set `pdtoken` to that
+   - Get an API token from PagerDuty that can update the relevant PagerDuty events and set `pdtoken` to that.
+     (profile pic > User Settings > Create API User Token)
    - Make a random string and set `pdauthtoken` to that.
    - Get an API token from zabbix that can update the relevant events (I
      used one for same user as for pagerduty alerts), and set `zabbixtoken`
@@ -108,6 +115,15 @@ servers are purely internal/VPN-only.
    7. If you're able to watch error logs (where STDERR of CGIs go), do a "Send Test Event".
       You should see `pagey.pong` in that log.
 
+## FAQ/Common Problems/Likely Problems:
+
+- "Unable to determine zabbix event id" in error log:
+  This means that it couldn't find a `dedup_key` in the PagerDuty event.
+  If you use a "Zabbix" integration key from PagerDuty, the dedup_key
+  silently vanishes. Use the generic-looking "Events API V2" instead,
+  or create an orchestration (in automation) that routes to your Zabbix
+  service(s).
+
 ## References
 
 - <https://developer.pagerduty.com/docs/db0fa8c8984fc-overview>
@@ -118,8 +134,8 @@ servers are purely internal/VPN-only.
 This software is copyright (c) 2023, Sonic.net LLC, and Eric Eisenhart.  All rights reserved.
 
 This is free software; you can redistribute it and/or modify it under
-the same terms as the Perl 5 programming language system itself. 
- 
+the same terms as the Perl 5 programming language system itself.
+
  a) the GNU General Public License as published by the Free
     Software Foundation; either version 1, or (at your option) any
        later version, or
