@@ -70,6 +70,10 @@ our $config = AppConfig->new(
         DEFAULT  => 1,
         ARGCOUNT => ARGCOUNT_ONE,
     },
+    superearlysuccess => {
+        DEFAULT  => 0,
+        ARGCOUNT => ARGCOUNT_ONE,
+    },
 );
 
 # Search for and load the first available configuration file
@@ -100,10 +104,12 @@ warn("SECURITY WARNING: Logs may get sensitive data (auth tokens) with debug>=3\
 
 our $cgi = CGI->new();
 
-our $ua = LWP::UserAgent->new( agent => 'pagerduty2zabbix (https://github.com/sonic-com/pagerduty2zabbix)' );
+if ( $config->get('superearlysuccess') ) {
+    print $cgi->header( -status => '202 Accepted Early' );
+    warn("Returning success header early.") if $DEBUG;
+}
 
-# Always tell PD we got the message right away:
-#print $cgi->header();
+our $ua = LWP::UserAgent->new( agent => 'pagerduty2zabbix (https://github.com/sonic-com/pagerduty2zabbix)' );
 
 if ( $DEBUG >= 5 ) {
     warn "Headers:\n";
@@ -151,9 +157,7 @@ unless ($payload) {
 handle_pagerduty_webhook($payload);
 
 # Send a response back to PagerDuty
-my $response = { status => 'success' };
-print $cgi->header('application/json');
-print encode_json($response);
+print $cgi->header( -status => '202 Accepted Complete Success' );
 
 # PagerDuty webhook handler
 sub handle_pagerduty_webhook {
@@ -179,63 +183,46 @@ sub handle_pagerduty_webhook {
     my $event_details   = get_event_details($self_url);
     my $zabbix_event_id = get_zabbix_event_id($event_details);
 
+    unless ($zabbix_event_id) {
+        print $cgi->header( -status => "429 Can't determine zabbix event id; retry" );
+        die "Unable to determine zabbix event id";
+    }
+
     # Do appropriate actions on incident event types:
     if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate') ) {
-        if ($zabbix_event_id) {
-            annotate_zabbix_event( $zabbix_event_id, $html_url );
-        }
-        else {
-            die "Unable to determine zabbix event id";
-        }
 
+        # Add PD incident URL as comment on Zabbix event:
+        annotate_zabbix_event( $zabbix_event_id, $html_url );
     }
     elsif ( $event_type eq 'incident.acknowledged' ) {
-        if ($zabbix_event_id) {
 
-            # Update Zabbix event acknowledgement
-            acknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
-        }
-        else {
-            die "Unable to determine zabbix event id";
-        }
+        # Update Zabbix event acknowledgement
+        acknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
     }
     elsif ( $event_type eq 'incident.unacknowledged' ) {
-        if ($zabbix_event_id) {
-            unacknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
-        }
-        else {
-            die "Unable to determine zabbix event id";
-        }
+
+        # Clear acknowledgement from zabbix event
+        unacknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
     }
     elsif ( $event_type eq 'incident.annotated' ) {
-        if ($zabbix_event_id) {
-            my $who     = $event->{'agent'}{'summary'};
-            my $content = $event->{'data'}{'content'};
-            $who ||= "PD";
-            my $message = "$content -$who";
 
-            annotate_zabbix_event( $zabbix_event_id, $message );
-        }
-        else {
-            die "Unable to determine zabbix event id";
-        }
+        # Add comment to zabbix event when PD event gets a note
+        my $who     = $event->{'agent'}{'summary'};
+        my $content = $event->{'data'}{'content'};
+        $who ||= "PD";
+        my $message = "$content -$who";
 
+        annotate_zabbix_event( $zabbix_event_id, $message );
     }
     elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate') ) {
-        if ($zabbix_event_id) {
-            close_zabbix_event( $zabbix_event_id, $event, $event_details );
-        }
-        else {
-            die "Unable to determine zabbix event id";
-        }
+
+        # Send event close attempt to Zabbix
+        close_zabbix_event( $zabbix_event_id, $event, $event_details );
     }
     elsif ( $event_type eq 'incident.priority_updated' ) {
-        if ($zabbix_event_id) {
-            update_priority_zabbix_event( $zabbix_event_id, $event, $event_details );
-        }
-        else {
-            die "Unable to determine zabbix event id";
-        }
+
+        # Update Zabbix event severity if PD incident priority changed
+        update_priority_zabbix_event( $zabbix_event_id, $event, $event_details );
     }
 
     # PD event types we may want to handle:
