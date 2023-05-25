@@ -104,8 +104,8 @@ warn("SECURITY WARNING: Logs may get sensitive data (auth tokens) with debug>=3\
 
 our $cgi = CGI->new();
 
-if ($config->get('superearlysuccess')) {
-    print $cgi->header(-status=>'202 Accepted Early');
+if ( $config->get('superearlysuccess') ) {
+    print $cgi->header( -status => '202 Accepted Early' );
     warn("Returning success header early.") if $DEBUG;
 }
 
@@ -157,7 +157,7 @@ unless ($payload) {
 handle_pagerduty_webhook($payload);
 
 # Send a response back to PagerDuty
-print $cgi->header(-status=>'202 Accepted Complete Success');
+print $cgi->header( -status => '202 Accepted Complete Success' );
 
 # PagerDuty webhook handler
 sub handle_pagerduty_webhook {
@@ -184,24 +184,28 @@ sub handle_pagerduty_webhook {
     my $zabbix_event_id = get_zabbix_event_id($event_details);
 
     unless ($zabbix_event_id) {
-        print $cgi->header(-status=>"429 Can't determine zabbix event id; retry");
+        print $cgi->header( -status => "429 Can't determine zabbix event id; retry" );
         die "Unable to determine zabbix event id";
     }
 
     # Do appropriate actions on incident event types:
     if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate') ) {
+
         # Add PD incident URL as comment on Zabbix event:
         annotate_zabbix_event( $zabbix_event_id, $html_url );
     }
     elsif ( $event_type eq 'incident.acknowledged' ) {
+
         # Update Zabbix event acknowledgement
         acknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
     }
     elsif ( $event_type eq 'incident.unacknowledged' ) {
+
         # Clear acknowledgement from zabbix event
         unacknowledge_zabbix_event( $zabbix_event_id, $event, $event_details );
     }
     elsif ( $event_type eq 'incident.annotated' ) {
+
         # Add comment to zabbix event when PD event gets a note
         my $who     = $event->{'agent'}{'summary'};
         my $content = $event->{'data'}{'content'};
@@ -211,10 +215,12 @@ sub handle_pagerduty_webhook {
         annotate_zabbix_event( $zabbix_event_id, $message );
     }
     elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate') ) {
+
         # Send event close attempt to Zabbix
         close_zabbix_event( $zabbix_event_id, $event, $event_details );
     }
     elsif ( $event_type eq 'incident.priority_updated' ) {
+
         # Update Zabbix event severity if PD incident priority changed
         update_priority_zabbix_event( $zabbix_event_id, $event, $event_details );
     }
