@@ -43,10 +43,10 @@ our $DEBUG = 0;
 
 # Define the configuration file search paths
 my @config_paths = qw(
-  .pagerduty2zabbix.conf
-  ./pagerduty2zabbix.conf
-  /etc/pagerduty2zabbix/pagerduty2zabbix.conf
-  /etc/pagerduty2zabbix.conf
+    .pagerduty2zabbix.conf
+    ./pagerduty2zabbix.conf
+    /etc/pagerduty2zabbix/pagerduty2zabbix.conf
+    /etc/pagerduty2zabbix.conf
 );
 
 # Create a new AppConfig object
