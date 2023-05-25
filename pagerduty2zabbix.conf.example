@@ -24,3 +24,7 @@ triggeredupdate=1
 
 # Allow PD to (try to) close zabbix events when a PD incident is marked resolved?
 resolvedupdate=1
+
+# Output "success" header early, regardless of how well we do.
+# May be useful to prevent PagerDuty from disabling the WebHook if you have intermittent problems.
+superearlysuccess=0
