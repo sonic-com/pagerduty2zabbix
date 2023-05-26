@@ -20,7 +20,7 @@ use AppConfig qw/:expand :argcount/;
 # https://www.zabbix.com/documentation/current/en/manual/api/reference/event/acknowledge#parameters
 use constant {
 
-    # action bitmap values:
+    # Zabbix event action bitmap values:
     ZABBIX_CLOSE             => 1,
     ZABBIX_ACK               => 2,
     ZABBIX_ADD_MSG           => 4,
@@ -31,6 +31,7 @@ use constant {
     ZABBIX_CHANGE_TO_CAUSE   => 128,
     ZABBIX_CHANGE_TO_SYMPTOP => 256,
 
+    # Zabbix event severities
     ZABBIX_SEV_NOTCLASSIFIED => 0,
     ZABBIX_SEV_INFORMATION   => 1,
     ZABBIX_SEV_WARNING       => 2,
@@ -52,7 +53,7 @@ my @config_paths = qw(
 # Create a new AppConfig object
 our $config = AppConfig->new(
     debug => {
-        DEFAULT  => 1,
+        DEFAULT  => 1, # Default to some debugging if no config file found/parsed
         ARGCOUNT => ARGCOUNT_ONE,
     },
     pdtoken     => { ARGCOUNT => ARGCOUNT_ONE },
@@ -89,6 +90,7 @@ foreach my $config_path (@config_paths) {
     }
 }
 
+# Pull DEBUG value out for ease of use and some debug output...
 if ($found_config) {
     $DEBUG = $config->get('debug');
     warn("Config used: $config_path_used\n") if $DEBUG;
@@ -102,15 +104,20 @@ else {
 
 warn("SECURITY WARNING: Logs may get sensitive data (auth tokens) with debug>=3\n") if $DEBUG >= 3;
 
+# CGI object for later use.
 our $cgi = CGI->new();
 
+# If superearlysuccess is set, respond to PagerDuty with success regardless
+# of whether or not we succeed.
 if ( $config->get('superearlysuccess') ) {
     print $cgi->header( -status => '202 Accepted Early' );
     warn("Returning success header early.") if $DEBUG;
 }
 
+# HTTP/S useragent for talking to pagerduty and zabbix
 our $ua = LWP::UserAgent->new( agent => 'pagerduty2zabbix (https://github.com/sonic-com/pagerduty2zabbix)' );
 
+# Annoyingly verbose, but handy for debugging some details
 if ( $DEBUG >= 5 ) {
     warn "Headers:\n";
 
@@ -119,91 +126,129 @@ if ( $DEBUG >= 5 ) {
     }
 }
 
+# Output the full WebHook payload:
 if ( $DEBUG >= 4 ) {
     warn "POSTDATA:\n";
     warn $cgi->param('POSTDATA') . "\n";
 }
 
-# Authenticate (verify token received matches configured token)
-if ( $config->get('pdauthtoken') ) {
-    my $pdauthtoken  = $config->get('pdauthtoken');
-    my $pdauthheader = $cgi->http('Authentication');
-    warn("Auth header: $pdauthheader\n")      if $DEBUG >= 3;
-    warn("Auth token config: $pdauthtoken\n") if $DEBUG >= 3;
-    if ( defined($pdauthheader) && $pdauthtoken eq $pdauthheader ) {
-        warn("Auth token verified\n") if $DEBUG;
-    }
-    else {
-        print $cgi->header( -status => '401 Invalid Authentication Header' );
-        die("Auth header didn't match configured auth token\n");
-    }
-}
-else {
-    warn("No stored auth token to verify.\n") if $DEBUG;
-}
+# Verify auth tokens are there
+pagerduty_validate_webhook($config, $cgi);
 
 # Read and parse the incoming PagerDuty webhook payload
+# Exit with error if no payload
 my $json_payload = $cgi->param('POSTDATA');
 unless ($json_payload) {
     die "No json_payload from webhook POSTDATA\n";
 }
 
+# Parse the WebHook JSON into a data structure (nested hash)
 my $payload = decode_json($json_payload);
 unless ($payload) {
     die "Unable to parse json_payload into payload\n";
 }
 
-# Handle the PagerDuty webhook
+# Handle the PagerDuty webhook (this is where the magic happens)
 pagerduty_handle_webhook($payload);
 
-# Send a response back to PagerDuty
+# Send a success response back to PagerDuty
 print $cgi->header( -status => '202 Accepted Complete Success' );
 
-# PagerDuty webhook handler
+### END MAIN BODY ###
+# subroutines after this
+
+# Authenticate WebHook (verify token received matches configured token) if
+# we have a token to compare to exits with an error if auth fails. 
+# "superearlysuccess" param makes the error just a log, not returned to PD,
+# otherwise PD will see this as an error.
+sub pagerduty_validate_authentication {
+    my ($config, $cgi) = @_;
+
+    if ( $config->get('pdauthtoken') ) {
+        my $pdauthtoken  = $config->get('pdauthtoken');
+        my $pdauthheader = $cgi->http('Authentication');
+        warn("Auth header: $pdauthheader\n")      if $DEBUG >= 3;
+        warn("Auth token config: $pdauthtoken\n") if $DEBUG >= 3;
+        if ( defined($pdauthheader) && $pdauthtoken eq $pdauthheader ) {
+            warn("Auth token verified\n") if $DEBUG;
+        }
+        else {
+            print $cgi->header( -status => '401 Invalid Authentication Header' );
+            die("Auth header didn't match configured auth token\n");
+        }
+    }
+    else {
+        warn("No stored auth token to verify.\n") if $DEBUG;
+    }
+    
+}
+
+# PagerDuty webhook handler -- most of the work happens here
 sub pagerduty_handle_webhook {
     my ($payload) = @_;
 
+    # pull the "event" (main data) out of the WebHook payload
     my $event = $payload->{'event'};
     warn( "parsed event: " . to_json($event) . "\n" ) if $DEBUG >= 2;
 
+    # Work out what type of event it is
     my $event_type = $event->{'event_type'};
     warn("event_type: $event_type\n") if $DEBUG;
 
+    # Special case: if you're doing a test (ping), there will be no useful
+    # info, so output something to log and return to success
     if ( $event_type eq 'pagey.ping' ) {
         warn("pagey.pong\n");
         warn( "event: " . to_json($event) );
         return 1;
     }
 
+    # Get the PD event API endpoint for this event
     my $self_url = ( $event->{'data'}{'self'} || $event->{'data'}{'incident'}{'self'} );
     warn("self_url: $self_url\n") if $DEBUG >= 2;
+
+    # Get human-usable PD event URL
     my $html_url = ( $event->{'data'}{'html_url'} || $event->{'data'}{'incident'}{'html_url'} );
     warn("html_url: $html_url\n") if $DEBUG >= 2;
 
+    # Fetch more details from PagerDuty
     my $event_details   = pagerduty_get_event_details($self_url);
+
+    # Those more details from PD should include info to work out the zabbix
+    # event id for use with the Zabbix API
     my $zabbix_event_id = zabbix_get_event_id($event_details);
 
+    # If we couldn't work out a zabbix event id, we can't update zabbix.
+    # In case this was due to transient PagerDuty API issues, return "429"
+    # to tell PD to try the webhook again a bit later.
+    # Check PD WebHook docs for retry limits.
     unless ($zabbix_event_id) {
         print $cgi->header( -status => "429 Can't determine zabbix event id; retry" );
         die "Unable to determine zabbix event id";
     }
 
-    # Do appropriate actions on incident event types:
+    # Do appropriate actions on incident event types
+    
+    # triggered==created (or maybe also end of silencing)
     if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate') ) {
 
         # Add PD incident URL as comment on Zabbix event:
         zabbix_event_annotate( $zabbix_event_id, $html_url );
     }
+    # The original main reason for this: PD ACK to Zabbix ACK
     elsif ( $event_type eq 'incident.acknowledged' ) {
 
         # Update Zabbix event acknowledgement
         zabbix_event_acknowledge( $zabbix_event_id, $event, $event_details );
     }
+    # And UNACK
     elsif ( $event_type eq 'incident.unacknowledged' ) {
 
         # Clear acknowledgement from zabbix event
         zabbix_event_unacknowledge( $zabbix_event_id, $event, $event_details );
     }
+    # If a note is added in PD (if note added when doing another action,
+    # sends webhook for both that action and the note)
     elsif ( $event_type eq 'incident.annotated' ) {
 
         # Add comment to zabbix event when PD event gets a note
@@ -214,18 +259,26 @@ sub pagerduty_handle_webhook {
 
         zabbix_event_annotate( $zabbix_event_id, $message );
     }
+    # If someone clicks "resolve" in PD, try to close the Zabbix event
     elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate') ) {
 
         # Send event close attempt to Zabbix
         zabbix_event_close( $zabbix_event_id, $event, $event_details );
     }
+    # If priority changed in PD, update zabbix event severity to match
+    # TODO: make this configurable?
     elsif ( $event_type eq 'incident.priority_updated' ) {
 
         # Update Zabbix event severity if PD incident priority changed
         zabbix_event_update_priority( $zabbix_event_id, $event, $event_details );
     }
+    # If don't know what to do, log it.  Not an error, since could have
+    # simply accepted the default of WebHook sending all event types.
+    else {
+        warn("Don't know how to handle event type $event_type\n");
+    }
 
-    # PD event types we may want to handle:
+    # Other PD event types that we don't currently do anything with:
     #    "incident.delegated",
     #    "incident.escalated",
     #    "incident.reassigned",
@@ -235,6 +288,8 @@ sub pagerduty_handle_webhook {
     #    "incident.status_update_published",
 }
 
+# Use PD event API to get additional details on the incident.
+# Needed for fetching info that includes the zabbix event ID for the zabbix API.
 sub pagerduty_get_event_details {
     my ($self_url) = @_;
     my $pdtoken = $config->get('pdtoken');
@@ -253,12 +308,13 @@ sub pagerduty_get_event_details {
 }
 
 # Get the Zabbix event ID associated with a PagerDuty incident
+# TODO: explore backup options in case dedup_key not there... zabbix URL has it, for instance.
 sub zabbix_get_event_id {
     my ($event_details) = @_;
     return $event_details->{'body'}{'details'}{'dedup_key'};
 }
 
-# Update Zabbix notes/annotations
+# Add a message to the zabbix event.
 sub zabbix_event_annotate {
     my ( $zabbix_event_id, $message ) = @_;
     warn("Annotating Zabbix event $zabbix_event_id with message: $message\n") if $DEBUG;
@@ -272,7 +328,8 @@ sub zabbix_event_annotate {
     zabbix_event_update(%params);
 }
 
-# Update Zabbix event w/acknowledgement
+# Update Zabbix event w/acknowledgement.
+# Includes a "ACK'd in PD by $person" note.
 sub zabbix_event_acknowledge {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
@@ -292,7 +349,8 @@ sub zabbix_event_acknowledge {
 
 }
 
-# Update Zabbix event w/unacknowledgement
+# Update Zabbix event w/unacknowledgement.
+# Includes an "un-ACK'd in PD by $person" note.
 sub zabbix_event_unacknowledge {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
@@ -316,6 +374,7 @@ sub zabbix_event_unacknowledge {
 }
 
 # Update zabbix even with close/resolve.
+# Adds a "Resolved in PD by $person" note.
 # Note: can only close some events and silently ignores when it can't.
 sub zabbix_event_close {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
@@ -341,6 +400,7 @@ sub zabbix_event_close {
 }
 
 # Update zabbix event priority
+# TODO: make this configurable?
 sub zabbix_event_update_priority {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who        = $event->{'agent'}{'summary'};
@@ -374,7 +434,11 @@ sub zabbix_event_update_priority {
     # You need to make API calls to Zabbix to update the event
 }
 
-# Update Zabbix event:
+# Update Zabbix event.
+# This is what everything else calls to update Zabbix via the Zabbix API.
+# Arguments are hash-style arguments of what to update, including the mysterious bit-math-based actions.
+# Makes multiple attempts, in case a clustered config has something down. With slight backoff.
+# TODO: make retry stuff configurable.
 sub zabbix_event_update {
     my %params = @_;
 
@@ -385,7 +449,7 @@ sub zabbix_event_update {
     # curl --request POST \
     #   --url 'https://example.com/zabbix/api_jsonrpc.php' \
     #   --header 'Content-Type: application/json-rpc' \
-    #   --header 'Authorization: Bearer 0424bd59b807674191e7d77572075f33' \
+    #   --header 'Authorization: Bearer 3159081342135409871513098' \
     #   --data '{"jsonrpc":"2.0","method":"apiinfo.version","params":{},"id":1}'
 
     my $zabbixtoken   = $config->get('zabbixtoken');
@@ -403,6 +467,8 @@ sub zabbix_event_update {
 
     warn("Zabbix API payload: $json\n") if $DEBUG >= 2;
 
+    # Try up to 10 times to talk to zabbix, sleeping a bit longer each try.
+    # TODO: make retries configurable
     my $zabbixresponse;
     my $zabbixretries = 0;
     until ( $zabbixresponse && $zabbixresponse->is_success ) {
