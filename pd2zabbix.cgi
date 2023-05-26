@@ -53,7 +53,7 @@ my @config_paths = qw(
 # Create a new AppConfig object
 our $config = AppConfig->new(
     debug => {
-        DEFAULT  => 1, # Default to some debugging if no config file found/parsed
+        DEFAULT  => 1,              # Default to some debugging if no config file found/parsed
         ARGCOUNT => ARGCOUNT_ONE,
     },
     pdtoken     => { ARGCOUNT => ARGCOUNT_ONE },
@@ -133,7 +133,7 @@ if ( $DEBUG >= 4 ) {
 }
 
 # Verify auth tokens are there
-pagerduty_validate_webhook($config, $cgi);
+pagerduty_validate_webhook( $config, $cgi );
 
 # Read and parse the incoming PagerDuty webhook payload
 # Exit with error if no payload
@@ -158,11 +158,11 @@ print $cgi->header( -status => '202 Accepted Complete Success' );
 # subroutines after this
 
 # Authenticate WebHook (verify token received matches configured token) if
-# we have a token to compare to exits with an error if auth fails. 
+# we have a token to compare to exits with an error if auth fails.
 # "superearlysuccess" param makes the error just a log, not returned to PD,
 # otherwise PD will see this as an error.
 sub pagerduty_validate_authentication {
-    my ($config, $cgi) = @_;
+    my ( $config, $cgi ) = @_;
 
     if ( $config->get('pdauthtoken') ) {
         my $pdauthtoken  = $config->get('pdauthtoken');
@@ -180,7 +180,7 @@ sub pagerduty_validate_authentication {
     else {
         warn("No stored auth token to verify.\n") if $DEBUG;
     }
-    
+
 }
 
 # PagerDuty webhook handler -- most of the work happens here
@@ -212,7 +212,7 @@ sub pagerduty_handle_webhook {
     warn("html_url: $html_url\n") if $DEBUG >= 2;
 
     # Fetch more details from PagerDuty
-    my $event_details   = pagerduty_get_event_details($self_url);
+    my $event_details = pagerduty_get_event_details($self_url);
 
     # Those more details from PD should include info to work out the zabbix
     # event id for use with the Zabbix API
@@ -228,25 +228,28 @@ sub pagerduty_handle_webhook {
     }
 
     # Do appropriate actions on incident event types
-    
+
     # triggered==created (or maybe also end of silencing)
     if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate') ) {
 
         # Add PD incident URL as comment on Zabbix event:
         zabbix_event_annotate( $zabbix_event_id, $html_url );
     }
+
     # The original main reason for this: PD ACK to Zabbix ACK
     elsif ( $event_type eq 'incident.acknowledged' ) {
 
         # Update Zabbix event acknowledgement
         zabbix_event_acknowledge( $zabbix_event_id, $event, $event_details );
     }
+
     # And UNACK
     elsif ( $event_type eq 'incident.unacknowledged' ) {
 
         # Clear acknowledgement from zabbix event
         zabbix_event_unacknowledge( $zabbix_event_id, $event, $event_details );
     }
+
     # If a note is added in PD (if note added when doing another action,
     # sends webhook for both that action and the note)
     elsif ( $event_type eq 'incident.annotated' ) {
@@ -259,12 +262,14 @@ sub pagerduty_handle_webhook {
 
         zabbix_event_annotate( $zabbix_event_id, $message );
     }
+
     # If someone clicks "resolve" in PD, try to close the Zabbix event
     elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate') ) {
 
         # Send event close attempt to Zabbix
         zabbix_event_close( $zabbix_event_id, $event, $event_details );
     }
+
     # If priority changed in PD, update zabbix event severity to match
     # TODO: make this configurable?
     elsif ( $event_type eq 'incident.priority_updated' ) {
@@ -272,6 +277,7 @@ sub pagerduty_handle_webhook {
         # Update Zabbix event severity if PD incident priority changed
         zabbix_event_update_priority( $zabbix_event_id, $event, $event_details );
     }
+
     # If don't know what to do, log it.  Not an error, since could have
     # simply accepted the default of WebHook sending all event types.
     else {
