@@ -106,6 +106,7 @@ our $cgi = CGI->new();
 
 if ( $config->get('superearlysuccess') ) {
     print $cgi->header( -status => '202 Accepted Early' );
+    print "\n";
     warn("Returning success header early.") if $DEBUG;
 }
 
@@ -255,7 +256,25 @@ sub get_event_details {
 # Get the Zabbix event ID associated with a PagerDuty incident
 sub get_zabbix_event_id {
     my ($event_details) = @_;
-    return $event_details->{'body'}{'details'}{'dedup_key'};
+    my $eventid = '';
+
+    # Primary place we find the eventid:
+    $eventid = $event_details->{'body'}{'details'}{'dedup_key'};
+
+    # Second place to look for eventid:
+    unless ($eventid) {
+        $eventid = $event_details->{'body'}{'details'}{'__pd_cef_payload'}{'dedup_key'};
+    }
+
+    # If don't find event id on its own, try parsing out of the URL to the zabbix event
+    unless ($eventid) {
+        my $zabbixurl = $event_details->{'body'}{'details'}{'links'}[0]{'href'};
+        $zabbixurl ||= $event_details->{'body'}{'details'}{'contexts'}[0]{'href'};
+        if ( $zabbixurl =~ m/[?&]eventid=(\d+)/ ) {
+            $eventid = $1;
+        }
+    }
+    return $eventid;
 }
 
 # Update Zabbix notes/annotations
