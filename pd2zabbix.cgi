@@ -418,8 +418,8 @@ sub zabbix_event_close {
         message  => $message
     );
 
-    warn( "update_zabbix_event ack_params: " . to_json( \%ack_params ) ) if $DEBUG >= 2;
-    update_zabbix_event(%ack_params);
+    warn( "zabbix_event_update ack_params: " . to_json( \%ack_params ) ) if $DEBUG >= 2;
+    zabbix_event_update(%ack_params);
 
     warn("Resolving Zabbix event $zabbix_event_id\n") if $DEBUG;
 
@@ -427,8 +427,8 @@ sub zabbix_event_close {
         eventids => $zabbix_event_id,
         action   => ZABBIX_CLOSE,                   # bit-math
     );
-    warn( "update_zabbix_event close_params: " . to_json( \%close_params ) ) if $DEBUG >= 2;
-    update_zabbix_event(%close_params);
+    warn( "zabbix_event_update close_params: " . to_json( \%close_params ) ) if $DEBUG >= 2;
+    zabbix_event_update(%close_params);
 
     # TODO:
     # Implement your logic here to update the acknowledgement status of the Zabbix event
