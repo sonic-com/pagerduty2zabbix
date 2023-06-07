@@ -134,7 +134,7 @@ if ( $DEBUG >= 4 ) {
 }
 
 # Verify auth tokens are there
-pagerduty_validate_webhook( $config, $cgi );
+pagerduty_validate_authentication( $config, $cgi );
 
 # Read and parse the incoming PagerDuty webhook payload
 # Exit with error if no payload
