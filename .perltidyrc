@@ -1,4 +1,4 @@
 --perl-best-practices
 --nostandard-output
---continuation-indentation=2
+--continuation-indentation=4
 --maximum-line-length=120

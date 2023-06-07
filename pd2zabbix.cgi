@@ -403,8 +403,8 @@ sub zabbix_event_unacknowledge {
 # Note: can only close some events and silently ignores when it can't.
 sub zabbix_event_close {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
-    my $who     = $event->{'agent'}{'summary'};
-    
+    my $who = $event->{'agent'}{'summary'};
+
     my $message = "Resolved in PD";
     if ( defined $who ) {
         $message .= " by $who";
@@ -425,7 +425,7 @@ sub zabbix_event_close {
 
     my %close_params = (
         eventids => $zabbix_event_id,
-        action   => ZABBIX_CLOSE,    # bit-math
+        action   => ZABBIX_CLOSE,                   # bit-math
     );
     warn( "update_zabbix_event close_params: " . to_json( \%close_params ) ) if $DEBUG >= 2;
     update_zabbix_event(%close_params);
@@ -515,12 +515,12 @@ sub zabbix_event_update {
             Content         => $json,
         );
 
-        if ($zabbixresponse && $zabbixresponse->is_success) {
+        if ( $zabbixresponse && $zabbixresponse->is_success ) {
             warn("Zabbix API update successful on try $zabbixretries\n") if $DEBUG;
             warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
         }
         else {
-            warn( "Zabbix API attempt $zabbixretries\n") if ( $DEBUG >=2 or ( $DEBUG >=1 and $zabbixretries >= 3 ) );
+            warn("Zabbix API attempt $zabbixretries\n") if ( $DEBUG >= 2 or ( $DEBUG >= 1 and $zabbixretries >= 3 ) );
             warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
 
             if ( $zabbixretries >= 10 ) {
