@@ -182,7 +182,10 @@ sub handle_pagerduty_webhook {
     warn("html_url: $html_url\n") if $DEBUG >= 2;
 
     my $event_details   = get_event_details($self_url);
+    warn("event_details: " . to_json($event_details)) if $DEBUG >= 2;
+
     my $zabbix_event_id = get_zabbix_event_id($event_details);
+    warn("zabbix_event_id: $zabbix_event_id\n") if $DEBUG;
 
     unless ($zabbix_event_id) {
         print $cgi->header( -status => "429 Can't determine zabbix event id; retry" );
@@ -431,7 +434,8 @@ sub update_zabbix_event {
             'Authorization' => "Bearer $zabbixtoken",
             Content         => $json,
         );
-        warn( to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG;
+        warn( "Zabbix API attempt $zabbixretries\n") if ( $DEBUG >=2 or ( $DEBUG >=1 and $zabbixretries >= 3 ) );
+        warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
 
         if ( $zabbixretries >= 10 ) {
             warn to_json( $zabbixresponse, { allow_blessed => 1 } );
@@ -439,6 +443,7 @@ sub update_zabbix_event {
         }
         else {
             $zabbixretries++;
+            warn("Waiting $zabbixretries seconds before trying Zabbix API again\n") if $DEBUG >= 2;
             sleep($zabbixretries);
         }
     }
