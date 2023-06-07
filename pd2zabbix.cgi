@@ -516,7 +516,7 @@ sub zabbix_event_update {
         );
 
         if ( $zabbixresponse && $zabbixresponse->is_success ) {
-            warn("Zabbix API update successful on try $zabbixretries\n") if $DEBUG;
+            warn("Zabbix API update successful on try $zabbixretries\n")                          if $DEBUG;
             warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
         }
         else {
