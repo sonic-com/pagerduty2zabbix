@@ -434,17 +434,24 @@ sub update_zabbix_event {
             'Authorization' => "Bearer $zabbixtoken",
             Content         => $json,
         );
-        warn( "Zabbix API attempt $zabbixretries\n") if ( $DEBUG >=2 or ( $DEBUG >=1 and $zabbixretries >= 3 ) );
-        warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
 
-        if ( $zabbixretries >= 10 ) {
-            warn to_json( $zabbixresponse, { allow_blessed => 1 } );
-            die "Couldn't talk to zabbix API after $zabbixretries attempts.\n";
+        if ($zabbixresponse && $zabbixresponse->is_success) {
+            warn("Zabbix API update successful on try $zabbixretries\n") if $DEBUG;
+            warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
         }
         else {
-            $zabbixretries++;
-            warn("Waiting $zabbixretries seconds before trying Zabbix API again\n") if $DEBUG >= 2;
-            sleep($zabbixretries);
+            warn( "Zabbix API attempt $zabbixretries\n") if ( $DEBUG >=2 or ( $DEBUG >=1 and $zabbixretries >= 3 ) );
+            warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
+
+            if ( $zabbixretries >= 10 ) {
+                warn to_json( $zabbixresponse, { allow_blessed => 1 } );
+                die "Couldn't talk to zabbix API after $zabbixretries attempts.\n";
+            }
+            else {
+                $zabbixretries++;
+                warn("Waiting $zabbixretries seconds before trying Zabbix API again\n") if $DEBUG >= 2;
+                sleep($zabbixretries);
+            }
         }
     }
 
