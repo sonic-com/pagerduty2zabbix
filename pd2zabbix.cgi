@@ -342,20 +342,30 @@ sub unacknowledge_zabbix_event {
 sub close_zabbix_event {
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
+    
     my $message = "Resolved in PD";
     if ( defined $who ) {
         $message .= " by $who";
     }
 
-    warn("Resolving Zabbix event $zabbix_event_id\n") if $DEBUG;
+    warn("Acking Zabbix event $zabbix_event_id before close attempt\n") if $DEBUG;
 
-    my %params = (
+    my %ack_params = (
         eventids => $zabbix_event_id,
-        action   => ZABBIX_CLOSE ^ ZABBIX_ADD_MSG,    # bit-math
+        action   => ZABBIX_ACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    warn( "update_zabbix_event params: " . to_json( \%params ) ) if $DEBUG >= 2;
-    update_zabbix_event(%params);
+    warn( "update_zabbix_event ack_params: " . to_json( \%ack_params ) ) if $DEBUG >= 2;
+    update_zabbix_event(%ack_params);
+
+    warn("Resolving Zabbix event $zabbix_event_id\n") if $DEBUG;
+
+    my %close_params = (
+        eventids => $zabbix_event_id,
+        action   => ZABBIX_CLOSE,    # bit-math
+    );
+    warn( "update_zabbix_event close_params: " . to_json( \%close_params ) ) if $DEBUG >= 2;
+    update_zabbix_event(%close_params);
 
     # TODO:
     # Implement your logic here to update the acknowledgement status of the Zabbix event
