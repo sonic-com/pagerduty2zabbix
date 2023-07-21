@@ -64,7 +64,7 @@ our $config = AppConfig->new(
         ARGCOUNT => ARGCOUNT_LIST,
     },
     zabbixretries => {
-        DEFAULT => 1,
+        DEFAULT  => 1,
         ARGCOUNT => ARGCOUNT_ONE,
     },
     triggeredupdate => {
@@ -492,10 +492,9 @@ sub zabbix_event_update {
     #   --header 'Authorization: Bearer 3159081342135409871513098' \
     #   --data '{"jsonrpc":"2.0","method":"apiinfo.version","params":{},"id":1}'
 
-    my $maxretries        = $config->get('zabbixretries');
+    my $maxretries     = $config->get('zabbixretries');
     my $zabbixtoken    = $config->get('zabbixtoken');
     my $zabbixbaseurls = $config->get('zabbixurl');
-    
 
     my %payload = (
         jsonrpc => '2.0',
@@ -509,13 +508,13 @@ sub zabbix_event_update {
     warn("Zabbix API payload: $json\n") if $DEBUG >= 2;
 
     my $zabbixresponse;
-    OUTER: for my $zabbixbaseurl (@$zabbixbaseurls) {
+OUTER: for my $zabbixbaseurl (@$zabbixbaseurls) {
         my $zabbixretries = 0;
-        my $zabbixapiurl   = "$zabbixbaseurl/api_jsonrpc.php";
-        
+        my $zabbixapiurl  = "$zabbixbaseurl/api_jsonrpc.php";
+
         warn("Zabbix URL: $zabbixapiurl\n") if $DEBUG >= 2;
 
-        INNER: until ( $zabbixresponse && $zabbixresponse->is_success ) {
+    INNER: until ( $zabbixresponse && $zabbixresponse->is_success ) {
             $zabbixresponse = $ua->post(
                 $zabbixapiurl,
                 'Content-Type'  => 'application/json-rpc',
@@ -524,12 +523,13 @@ sub zabbix_event_update {
             );
 
             if ( $zabbixresponse && $zabbixresponse->is_success ) {
-                warn("Zabbix API update successful on try $zabbixretries\n")                          if $DEBUG;
+                warn("Zabbix API update successful on try $zabbixretries\n") if $DEBUG;
                 warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
                 last OUTER;
             }
             else {
-                warn("Zabbix API attempt $zabbixretries\n") if ( $DEBUG >= 2 or ( $DEBUG >= 1 and $zabbixretries >= 3 ) );
+                warn("Zabbix API attempt $zabbixretries\n")
+                    if ( $DEBUG >= 2 or ( $DEBUG >= 1 and $zabbixretries >= 3 ) );
                 warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
 
                 if ( $zabbixretries >= $maxretries ) {
@@ -545,7 +545,6 @@ sub zabbix_event_update {
             }
         }
     }
-    
 
     warn( to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 4;
 }
