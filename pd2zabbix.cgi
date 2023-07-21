@@ -61,6 +61,10 @@ our $config = AppConfig->new(
     zabbixtoken => { ARGCOUNT => ARGCOUNT_ONE },
     zabbixurl   => {
         DEFAULT  => 'https://zabbix/zabbix',
+        ARGCOUNT => ARGCOUNT_LIST,
+    },
+    zabbixretries => {
+        DEFAULT  => 1,
         ARGCOUNT => ARGCOUNT_ONE,
     },
     triggeredupdate => {
@@ -488,9 +492,9 @@ sub zabbix_event_update {
     #   --header 'Authorization: Bearer 3159081342135409871513098' \
     #   --data '{"jsonrpc":"2.0","method":"apiinfo.version","params":{},"id":1}'
 
-    my $zabbixtoken   = $config->get('zabbixtoken');
-    my $zabbixbaseurl = $config->get('zabbixurl');
-    my $zabbixapiurl  = "$zabbixbaseurl/api_jsonrpc.php";
+    my $maxretries     = $config->get('zabbixretries');
+    my $zabbixtoken    = $config->get('zabbixtoken');
+    my $zabbixbaseurls = $config->get('zabbixurl');
 
     my %payload = (
         jsonrpc => '2.0',
@@ -503,34 +507,41 @@ sub zabbix_event_update {
 
     warn("Zabbix API payload: $json\n") if $DEBUG >= 2;
 
-    # Try up to 10 times to talk to zabbix, sleeping a bit longer each try.
-    # TODO: make retries configurable
     my $zabbixresponse;
-    my $zabbixretries = 0;
-    until ( $zabbixresponse && $zabbixresponse->is_success ) {
-        $zabbixresponse = $ua->post(
-            $zabbixapiurl,
-            'Content-Type'  => 'application/json-rpc',
-            'Authorization' => "Bearer $zabbixtoken",
-            Content         => $json,
-        );
+OUTER: for my $zabbixbaseurl (@$zabbixbaseurls) {
+        my $zabbixretries = 0;
+        my $zabbixapiurl  = "$zabbixbaseurl/api_jsonrpc.php";
 
-        if ( $zabbixresponse && $zabbixresponse->is_success ) {
-            warn("Zabbix API update successful on try $zabbixretries\n")                          if $DEBUG;
-            warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
-        }
-        else {
-            warn("Zabbix API attempt $zabbixretries\n") if ( $DEBUG >= 2 or ( $DEBUG >= 1 and $zabbixretries >= 3 ) );
-            warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
+        warn("Zabbix URL: $zabbixapiurl\n") if $DEBUG >= 2;
 
-            if ( $zabbixretries >= 10 ) {
-                warn to_json( $zabbixresponse, { allow_blessed => 1 } );
-                die "Couldn't talk to zabbix API after $zabbixretries attempts.\n";
+    INNER: until ( $zabbixresponse && $zabbixresponse->is_success ) {
+            $zabbixresponse = $ua->post(
+                $zabbixapiurl,
+                'Content-Type'  => 'application/json-rpc',
+                'Authorization' => "Bearer $zabbixtoken",
+                Content         => $json,
+            );
+
+            if ( $zabbixresponse && $zabbixresponse->is_success ) {
+                warn("Zabbix API update successful on try $zabbixretries\n") if $DEBUG;
+                warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
+                last OUTER;
             }
             else {
-                $zabbixretries++;
-                warn("Waiting $zabbixretries seconds before trying Zabbix API again\n") if $DEBUG >= 2;
-                sleep($zabbixretries);
+                warn("Zabbix API attempt $zabbixretries\n")
+                    if ( $DEBUG >= 2 or ( $DEBUG >= 1 and $zabbixretries >= 3 ) );
+                warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
+
+                if ( $zabbixretries >= $maxretries ) {
+                    warn to_json( $zabbixresponse, { allow_blessed => 1 } );
+                    warn "Couldn't talk to zabbix API after $zabbixretries attempts.\n";
+                    next OUTER;
+                }
+                else {
+                    $zabbixretries++;
+                    warn("Waiting $zabbixretries seconds before trying Zabbix API again\n") if $DEBUG >= 2;
+                    sleep($zabbixretries);
+                }
             }
         }
     }
