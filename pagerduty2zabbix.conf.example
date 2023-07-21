@@ -18,6 +18,12 @@ zabbixtoken=xyz6789
 
 # zabbix URL for API
 zabbixurl=https://zabbix.example.com/zabbix
+# Specify multiple times if you have multiple zabbix-web instances you want it to try:
+zabbixurl=https://zabbix1.example.com/zabbix
+zabbixurl=https://zabbix2.example.com/zabbix
+
+# How many times to try each zabbix URL before trying next or giving up:
+zabbixretries=1
 
 # Add a comment with URL of PD incident to zabbix event when first triggered?
 triggeredupdate=1

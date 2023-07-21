@@ -98,7 +98,8 @@ servers are purely internal/VPN-only.
    - Get an API token from zabbix that can update the relevant events (I
      used one for same user as for pagerduty alerts), and set `zabbixtoken`
      to that.
-   - Set `zabbixurl` to the URL of your zabbix frontpage
+   - Set `zabbixurl` to the URL of your zabbix frontpage.
+     - Set multiple times if you have multiple frontends you want this to try (exits on first success).
    - If you don't want PD event urls as a comment on new zabbix events, set `triggeredupdate=0`.
    - If you don't want clicking "resolve" in PD to close Zabbix events, set `resolvedupdate=0`.
 8. In PagerDuty, go to the service Zabbix is sending events to, and:
