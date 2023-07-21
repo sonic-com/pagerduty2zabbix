@@ -100,6 +100,7 @@ servers are purely internal/VPN-only.
      to that.
    - Set `zabbixurl` to the URL of your zabbix frontpage.
      - Set multiple times if you have multiple frontends you want this to try (exits on first success).
+   - If you want multiple retries for each zabbix URL, set `zabbixretries` > 1.
    - If you don't want PD event urls as a comment on new zabbix events, set `triggeredupdate=0`.
    - If you don't want clicking "resolve" in PD to close Zabbix events, set `resolvedupdate=0`.
 8. In PagerDuty, go to the service Zabbix is sending events to, and:
