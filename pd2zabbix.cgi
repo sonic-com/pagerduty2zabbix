@@ -231,7 +231,7 @@ sub pagerduty_handle_webhook {
 
     # Those more details from PD should include info to work out the zabbix
     # event id for use with the Zabbix API
-    my $zabbix_event_id = zabbix_get_event_id($event_details);
+    my $zabbix_event_id = zabbix_get_event_id_from_pd_object($event_details);
 
     # If we couldn't work out a zabbix event id, we can't update zabbix.
     # In case this was due to transient PagerDuty API issues, return "429"
@@ -328,24 +328,58 @@ sub pagerduty_get_incident_details {
 
 }
 
+sub pagerduty_get_incident_alerts {
+    my ($self_url) = @_;
+    my $pdtoken = $config->get('pdtoken');
+
+    my $pd_response = $ua->get( "${self_url}/aerts", 'Authorization' => "Token token=${pdtoken}", );
+    warn( to_json( $pd_response, { allow_blessed => 1 } ) ) if $DEBUG >= 4;
+    if ( $pd_response->is_success ) {
+        my $pd_json_content = $pd_response->content();
+        my $content         = decode_json($pd_json_content);
+        return @{$content->{'alerts'}};
+    }
+    else {
+        die "Unable to fetch details from PagerDuty\n";
+    }
+
+}
+
 # Get the Zabbix event ID associated with a PagerDuty incident
 # TODO: explore backup options in case dedup_key not there... zabbix URL has it, for instance.
-sub zabbix_get_event_id {
-    my ($event_details) = @_;
+sub zabbix_get_event_id_from_pd_object {
+    my ($pagerduty_details) = @_;
     my $eventid = '';
 
-    # Primary place we find the eventid:
-    $eventid = $event_details->{'body'}{'details'}{'dedup_key'};
+    # Best place to find it in an alert:
+    $eventid = $pagerduty_details->{'alert_key'};
 
-    # Second place to look for eventid:
+    # Next best place to try in an alert:
     unless ($eventid) {
-        $eventid = $event_details->{'body'}{'details'}{'__pd_cef_payload'}{'dedup_key'};
+        $eventid = $pagerduty_details->{'body'}{'cef_details'}{'dedup_key'};
+    }
+
+    # First place look in incident details:
+    unless ($eventid) {
+        $eventid = $pagerduty_details->{'body'}{'details'}{'dedup_key'};
+    }
+
+    # Second place to look for eventid in incedent details:
+    unless ($eventid) {
+        $eventid = $pagerduty_details->{'body'}{'details'}{'__pd_cef_payload'}{'dedup_key'};
     }
 
     # If don't find event id on its own, try parsing out of the URL to the zabbix event
     unless ($eventid) {
-        my $zabbixurl = $event_details->{'body'}{'details'}{'links'}[0]{'href'};
-        $zabbixurl ||= $event_details->{'body'}{'details'}{'contexts'}[0]{'href'};
+        my $zabbixurl = '';
+        # First place to find zabbix event URL in an alert
+        $zabbixurl ||= $pagerduty_details->{'body'}{'contexts'}[0]{'href'};
+        # Second place to find zabbix event URL in an alert
+        $zabbixurl ||= $pagerduty_details->{'body'}{'cef_details'}{'contexts'}[0]{'href'};
+        # First place to find zabbix event URL in an incident
+        $zabbixurl ||= $pagerduty_details->{'body'}{'details'}{'links'}[0]{'href'};
+        # Second place to find zabbix event URL in an incident
+        $zabbixurl ||= $pagerduty_details->{'body'}{'details'}{'contexts'}[0]{'href'};
         if ( $zabbixurl =~ m/[?&]eventid=(\d+)/ ) {
             $eventid = $1;
         }
