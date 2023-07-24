@@ -188,6 +188,16 @@ sub pagerduty_validate_authentication {
 
 }
 
+# WebHook->event->incident->alert(s)
+
+# PD sends WebHook with an outbound "event", containing:
+#   - type of update (event_type)
+#   - possible additional event data (comment contents)
+#   - Some incident data (inc self url)
+# Incident contains 1 or more "alerts" that can be fetched.
+# Alerts are what Zabbix had sent and have the zabbix event id needed to
+# update zabbix.
+
 # PagerDuty webhook handler -- most of the work happens here
 sub pagerduty_handle_webhook {
     my ($payload) = @_;
@@ -217,7 +227,7 @@ sub pagerduty_handle_webhook {
     warn("html_url: $html_url\n") if $DEBUG >= 2;
 
     # Fetch more details from PagerDuty
-    my $event_details = pagerduty_get_event_details($self_url);
+    my $event_details = pagerduty_get_incident_details($self_url);
 
     # Those more details from PD should include info to work out the zabbix
     # event id for use with the Zabbix API
@@ -301,7 +311,7 @@ sub pagerduty_handle_webhook {
 
 # Use PD event API to get additional details on the incident.
 # Needed for fetching info that includes the zabbix event ID for the zabbix API.
-sub pagerduty_get_event_details {
+sub pagerduty_get_incident_details {
     my ($self_url) = @_;
     my $pdtoken = $config->get('pdtoken');
 
