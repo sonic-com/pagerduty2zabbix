@@ -228,7 +228,12 @@ sub pagerduty_handle_webhook {
 
     my @pagerduty_alerts = @{pagerduty_get_incident_alerts($self_url)};
 
-    warn ("pagerduty_alerts count: ".$#pagerduty_alerts, "\n") if $DEBUG >= 2;
+    warn ("pagerduty_alerts count: ".scalar(@pagerduty_alerts), "\n") if $DEBUG >= 2;
+    
+    if (scalar(@pagerduty_alerts) <= 0) {
+        warn("No alerts found, trying get_incident_details\n") if $DEBUG >= 1;
+        push @pagerduty_alerts, pagerduty_get_incident_details($self_url);
+    }
 
     foreach my $pagerduty_alert (@pagerduty_alerts) {
         warn( "alert: " . to_json($pagerduty_alert) . "\n" ) if $DEBUG >= 2;    
