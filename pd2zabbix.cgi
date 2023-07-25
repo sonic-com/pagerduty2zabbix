@@ -226,77 +226,86 @@ sub pagerduty_handle_webhook {
     my $html_url = ( $event->{'data'}{'html_url'} || $event->{'data'}{'incident'}{'html_url'} );
     warn("html_url: $html_url\n") if $DEBUG >= 2;
 
-    # Fetch more details from PagerDuty
-    my $event_details = pagerduty_get_incident_details($self_url);
+    my @pagerduty_alerts = @{pagerduty_get_incident_alerts($self_url)};
 
-    # Those more details from PD should include info to work out the zabbix
-    # event id for use with the Zabbix API
-    my $zabbix_event_id = zabbix_get_event_id_from_pd_object($event_details);
+    warn ("pagerduty_alerts count: ".$#pagerduty_alerts, "\n") if $DEBUG >= 2;
 
-    # If we couldn't work out a zabbix event id, we can't update zabbix.
-    # In case this was due to transient PagerDuty API issues, return "429"
-    # to tell PD to try the webhook again a bit later.
-    # Check PD WebHook docs for retry limits.
-    unless ($zabbix_event_id) {
-        print $cgi->header( -status => "429 Can't determine zabbix event id; retry" );
-        die "Unable to determine zabbix event id";
-    }
+    foreach my $pagerduty_alert (@pagerduty_alerts) {
+        warn( "alert: " . to_json($pagerduty_alert) . "\n" ) if $DEBUG >= 2;    
+        my $zabbix_event_id = zabbix_get_event_id_from_pd_object($pagerduty_alert);
+        local $@; # exception-handling
 
-    # Do appropriate actions on incident event types
+        # If we couldn't work out a zabbix event id, we can't update zabbix.
+        # In case this was due to transient PagerDuty API issues, return "429"
+        # to tell PD to try the webhook again a bit later.
+        # Check PD WebHook docs for retry limits.
+        unless ($zabbix_event_id) {
+            print $cgi->header( -status => "429 Can't determine zabbix event id; retry" );
+            warn "Unable to determine zabbix event id";
+            next;
+        }
 
-    # triggered==created (or maybe also end of silencing)
-    if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate') ) {
 
-        # Add PD incident URL as comment on Zabbix event:
-        zabbix_event_annotate( $zabbix_event_id, $html_url );
-    }
+        # Do appropriate actions on incident event types
 
-    # The original main reason for this: PD ACK to Zabbix ACK
-    elsif ( $event_type eq 'incident.acknowledged' ) {
+        # triggered==created (or maybe also end of silencing)
+        if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate') ) {
 
-        # Update Zabbix event acknowledgement
-        zabbix_event_acknowledge( $zabbix_event_id, $event, $event_details );
-    }
+            # Add PD incident URL as comment on Zabbix event:
+            eval { zabbix_event_annotate( $zabbix_event_id, $html_url ) };
+        }
 
-    # And UNACK
-    elsif ( $event_type eq 'incident.unacknowledged' ) {
+        # The original main reason for this: PD ACK to Zabbix ACK
+        elsif ( $event_type eq 'incident.acknowledged' ) {
 
-        # Clear acknowledgement from zabbix event
-        zabbix_event_unacknowledge( $zabbix_event_id, $event, $event_details );
-    }
+            # Update Zabbix event acknowledgement
+            eval { zabbix_event_acknowledge( $zabbix_event_id, $event, $pagerduty_alert ) };
+        }
 
-    # If a note is added in PD (if note added when doing another action,
-    # sends webhook for both that action and the note)
-    elsif ( $event_type eq 'incident.annotated' ) {
+        # And UNACK
+        elsif ( $event_type eq 'incident.unacknowledged' ) {
 
-        # Add comment to zabbix event when PD event gets a note
-        my $who     = $event->{'agent'}{'summary'};
-        my $content = $event->{'data'}{'content'};
-        $who ||= "PD";
-        my $message = "$content -$who";
+            # Clear acknowledgement from zabbix event
+            eval { zabbix_event_unacknowledge( $zabbix_event_id, $event, $pagerduty_alert ) };
+        }
 
-        zabbix_event_annotate( $zabbix_event_id, $message );
-    }
+        # If a note is added in PD (if note added when doing another action,
+        # sends webhook for both that action and the note)
+        elsif ( $event_type eq 'incident.annotated' ) {
 
-    # If someone clicks "resolve" in PD, try to close the Zabbix event
-    elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate') ) {
+            # Add comment to zabbix event when PD event gets a note
+            my $who     = $event->{'agent'}{'summary'};
+            my $content = $event->{'data'}{'content'};
+            $who ||= "PD";
+            my $message = "$content -$who";
 
-        # Send event close attempt to Zabbix
-        zabbix_event_close( $zabbix_event_id, $event, $event_details );
-    }
+            eval { zabbix_event_annotate( $zabbix_event_id, $message ) };
+        }
 
-    # If priority changed in PD, update zabbix event severity to match
-    # TODO: make this configurable?
-    elsif ( $event_type eq 'incident.priority_updated' ) {
+        # If someone clicks "resolve" in PD, try to close the Zabbix event
+        elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate') ) {
 
-        # Update Zabbix event severity if PD incident priority changed
-        zabbix_event_update_priority( $zabbix_event_id, $event, $event_details );
-    }
+            # Send event close attempt to Zabbix
+            eval { zabbix_event_close( $zabbix_event_id, $event, $pagerduty_alert ) };
+        }
 
-    # If don't know what to do, log it.  Not an error, since could have
-    # simply accepted the default of WebHook sending all event types.
-    else {
-        warn("Don't know how to handle event type $event_type\n");
+        # If priority changed in PD, update zabbix event severity to match
+        # TODO: make this configurable?
+        elsif ( $event_type eq 'incident.priority_updated' ) {
+
+            # Update Zabbix event severity if PD incident priority changed
+            eval { zabbix_event_update_priority( $zabbix_event_id, $event, $pagerduty_alert ) };
+        }
+
+        # If don't know what to do, log it.  Not an error, since could have
+        # simply accepted the default of WebHook sending all event types.
+        else {
+            warn("Don't know how to handle event type $event_type\n");
+        }
+
+        if (my $exception = $@) {
+            warn $exception;
+        }
     }
 
     # Other PD event types that we don't currently do anything with:
@@ -328,19 +337,24 @@ sub pagerduty_get_incident_details {
 
 }
 
+# Use PD event/incident API to get a list of alerts on the incident
 sub pagerduty_get_incident_alerts {
     my ($self_url) = @_;
     my $pdtoken = $config->get('pdtoken');
 
-    my $pd_response = $ua->get( "${self_url}/aerts", 'Authorization' => "Token token=${pdtoken}", );
+    warn("pagerduty_get_incident_alerts: self_url: $self_url\n") if $DEBUG >= 2;
+
+    my $pd_response = $ua->get( "${self_url}/alerts", 'Authorization' => "Token token=${pdtoken}", );
     warn( to_json( $pd_response, { allow_blessed => 1 } ) ) if $DEBUG >= 4;
     if ( $pd_response->is_success ) {
         my $pd_json_content = $pd_response->content();
         my $content         = decode_json($pd_json_content);
-        return @{$content->{'alerts'}};
+        return $content->{'alerts'};
     }
     else {
-        die "Unable to fetch details from PagerDuty\n";
+        warn "Unable to fetch alerts from PagerDuty\n";
+        warn $pd_response->as_string(). "\n";
+        die;
     }
 
 }
