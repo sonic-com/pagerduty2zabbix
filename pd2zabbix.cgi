@@ -109,7 +109,7 @@ else {
     $DEBUG = 1;
 }
 
-warn("DEBUG level: $DEBUG\n") if $DEBUG;
+warn("DEBUG level: $DEBUG\n")                                                       if $DEBUG;
 warn("SECURITY WARNING: Logs may get sensitive data (auth tokens) with debug>=3\n") if $DEBUG >= 3;
 
 # CGI object for later use.
