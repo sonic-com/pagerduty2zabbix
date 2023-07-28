@@ -23,19 +23,37 @@ from PagerDuty.
   Zabbix event to match (with note of who changed it).
 - If triggeredupdate=1, PagerDuty incident "triggered" (created) will add
   the PD URL as a comment on the Zabbix event.
-- If resolvedupdate=1, PagerDuty incident "resolved" will try to close the
-  Zabbix event.  (can't close everything).
+- PD "resolved" status can mean this is a "child" in an incident merge,
+  user marked 'resolved', or resolved because Zabbix closed event via API.
+  - For merges, if pdmergeaction=merge the "parent" incident will be
+    marked as a "cause", and the child as a "symptom" with parent as
+    it's "cause". In Zabbix you'll see the parent in events list and
+    can expand to see children.
+  - If merge and pdmergeaction=ignore, nothing at all is done.
+  - If merge and pdmergeaction=resolve, will do same as not a merge.
+  - If not a merge, and resolvedupdate=1, will try to close the
+    Zabbix event.  (can't close everything, but tries).
+  - Otherwise, will do nothing.
 
 If there's interest, could update Zabbix for "delegated", "escalated",
 "reassigned", "reopened", "responder.added", "responder.replied" and
 "status_update_published".  I'm not sure how to even cause some of those,
 and the others didn't seem important to have show up in Zabbix.
 
+The Priority/severity mappings are currently hard-coded, but if there's
+interest in making those configurable it shouldn't be hard to do.
+
 ### Requirements
 - Zabbix 6.4+ (might work with older, I'm testing on 6.4)
 - perl 5.10+
-- valid SSL certs
-- some perl modules
+- valid SSL certs on zabbix web (or needs to use http not https)
+- Perl modules (in cpanfile and all are commonly available in most distros):
+  - CGI
+  - JSON
+  - LWP::UserAgent
+  - LWP::Protocol::https
+  - CGI::Carp
+  - AppConfig
 
 This CGI is stateless, so can easily be clustered for HA. Probably can run
 on same servers as zabbix-web, but we run it elsewhere because our Zabbix
@@ -78,12 +96,6 @@ servers are purely internal/VPN-only.
    ```
 7. Configure Zabbix to send alerts to PagerDuty with the Zabbix WebHook included with recent Zabbix versions.
 
-   **Important**: Use the generic-sounding "Events API v2" and _not_ the Zabbix-branded one.
-   Or create an Orchestration Rule (under Automation) that routes to your Zabbix service and
-   use an integration key from there.
-   (As of May 2023, if you use the Zabbix-branded integration, key information vanishes somewhere
-   in PagerDuty and pagerduty2zabbix can't work out the zabbix event id)
-
    If you've updated Zabbix, this may need to be updated to a version of
    the script that sets pagerduty "dedup_key" to zabbix "eventid".
 
@@ -91,6 +103,7 @@ servers are purely internal/VPN-only.
    and putting your PagerDuty API token into "Send to" of the user's media
    configuration. (so you have the easy option of additional PD integrations for different teams, etc)
 6. Copy pagerduty2zabbix.conf.example to ./pagerduty2zabbix.conf or /etc/pagerduty2zabbix.conf
+   Make sure not accessible to public, since needs a secret (zabbix API key).
 7. Edit pagerduty2zabbix.conf:
    - Get an API token from PagerDuty that can update the relevant PagerDuty events and set `pdtoken` to that.
      (profile pic > User Settings > Create API User Token)
@@ -120,11 +133,7 @@ servers are purely internal/VPN-only.
 ## FAQ/Common Problems/Likely Problems:
 
 - "Unable to determine zabbix event id" in error log:
-  This means that it couldn't find a `dedup_key` in the PagerDuty event.
-  If you use a "Zabbix" integration key from PagerDuty, the dedup_key
-  silently vanishes. Use the generic-looking "Events API V2" instead,
-  or create an orchestration (in automation) that routes to your Zabbix
-  service(s).
+  This means that it couldn't find a `dedup_key` (or `alert_key`) in the PagerDuty event.
 
 ## References
 

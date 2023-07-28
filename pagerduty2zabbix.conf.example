@@ -22,6 +22,10 @@ zabbixurl=https://zabbix.example.com/zabbix
 zabbixurl=https://zabbix1.example.com/zabbix
 zabbixurl=https://zabbix2.example.com/zabbix
 
+# Output "success" header early, regardless of how well we do.
+# Useful to prevent PagerDuty from disabling the WebHook if you have intermittent problems.
+superearlysuccess=1
+
 # How many times to try each zabbix URL before trying next or giving up:
 zabbixretries=1
 
@@ -31,6 +35,11 @@ triggeredupdate=1
 # Allow PD to (try to) close zabbix events when a PD incident is marked resolved?
 resolvedupdate=1
 
-# Output "success" header early, regardless of how well we do.
-# May be useful to prevent PagerDuty from disabling the WebHook if you have intermittent problems.
-superearlysuccess=0
+
+
+# How to handle PD merge events.
+# Valid choices:
+# - merge (merge zabbix events to match PD)
+# - ignore (do nothing)
+# - resolve (try to close the child events)
+pdmergeaction=merge
