@@ -29,7 +29,7 @@ use constant {
     ZABBIX_SUPPRESS          => 32,
     ZABBIX_UNSUPPRESS        => 64,
     ZABBIX_CHANGE_TO_CAUSE   => 128,
-    ZABBIX_CHANGE_TO_SYMPTOP => 256,
+    ZABBIX_CHANGE_TO_SYMPTOM => 256,
 
     # Zabbix event severities
     ZABBIX_SEV_NOTCLASSIFIED => 0,
@@ -79,7 +79,14 @@ our $config = AppConfig->new(
         DEFAULT  => 0,
         ARGCOUNT => ARGCOUNT_ONE,
     },
+    pdmergeaction => {
+        DEFAULT  => 'ignore',
+        ARGCOUNT => ARGCOUNT_ONE,
+    },
 );
+
+# JSON object for future use
+our $j = JSON->new()->allow_blessed(1);
 
 # Search for and load the first available configuration file
 my $found_config     = 0;
@@ -99,13 +106,14 @@ if ($found_config) {
     $DEBUG = $config->get('debug');
     warn("Config used: $config_path_used\n") if $DEBUG;
     my %vars = $config->varlist('.');
-    warn( "Config: " . to_json( \%vars ) . "\n" ) if $DEBUG >= 3;
+    warn( "Config: " . $j->encode( \%vars ) . "\n" ) if $DEBUG >= 3;
 }
 else {
     warn("No config found\n");
     $DEBUG = 1;
 }
 
+warn("DEBUG level: $DEBUG\n")                                                       if $DEBUG;
 warn("SECURITY WARNING: Logs may get sensitive data (auth tokens) with debug>=3\n") if $DEBUG >= 3;
 
 # CGI object for later use.
@@ -167,6 +175,7 @@ print $cgi->header( -status => '202 Accepted Complete Success' );
 # "superearlysuccess" param makes the error just a log, not returned to PD,
 # otherwise PD will see this as an error.
 sub pagerduty_validate_authentication {
+    warn( "pagerduty_validate_authentication args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
     my ( $config, $cgi ) = @_;
 
     if ( $config->get('pdauthtoken') ) {
@@ -188,13 +197,24 @@ sub pagerduty_validate_authentication {
 
 }
 
+# WebHook->event->incident->alert(s)
+
+# PD sends WebHook with an outbound "event", containing:
+#   - type of update (event_type)
+#   - possible additional event data (comment contents)
+#   - Some incident data (inc self url)
+# Incident contains 1 or more "alerts" that can be fetched.
+# Alerts are what Zabbix had sent and have the zabbix event id needed to
+# update zabbix.
+
 # PagerDuty webhook handler -- most of the work happens here
 sub pagerduty_handle_webhook {
+    warn( "pagerduty_handle_webhook args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
     my ($payload) = @_;
 
     # pull the "event" (main data) out of the WebHook payload
     my $event = $payload->{'event'};
-    warn( "parsed event: " . to_json($event) . "\n" ) if $DEBUG >= 2;
+    warn( "parsed event: " . $j->encode($event) . "\n" ) if $DEBUG >= 2;
 
     # Work out what type of event it is
     my $event_type = $event->{'event_type'};
@@ -204,8 +224,27 @@ sub pagerduty_handle_webhook {
     # info, so output something to log and return to success
     if ( $event_type eq 'pagey.ping' ) {
         warn("pagey.pong\n");
-        warn( "event: " . to_json($event) );
+        warn( "event: " . $j->encode($event) );
         return 1;
+    }
+
+    # Special case: merged incidents
+    if ( $event_type eq 'incident.resolved' && $event->{'data'}{'resolve_reason'}{'type'} eq 'merge_resolve_reason' ) {
+        warn("PD events merged...\n")                                   if $DEBUG >= 1;
+        warn( "pdmergeaction=" . $config->get('pdmergeaction') . "\n" ) if $DEBUG >= 2;
+
+        if ( $config->get('pdmergeaction') eq 'merge' ) {
+            warn("Merging this incident into another\n") if $DEBUG >= 1;
+            pagerduty_handle_merged_incidents($event);
+            return 1;
+        }
+        elsif ( $config->get('pdmergeaction') eq 'ignore' ) {
+            warn("Ignoring PD incident merge\n") if $DEBUG >= 1;
+            return 1;
+        }
+        else {
+            warn("Falling through to default of resolving children\n") if $DEBUG >= 1;
+        }
     }
 
     # Get the PD event API endpoint for this event
@@ -216,77 +255,90 @@ sub pagerduty_handle_webhook {
     my $html_url = ( $event->{'data'}{'html_url'} || $event->{'data'}{'incident'}{'html_url'} );
     warn("html_url: $html_url\n") if $DEBUG >= 2;
 
-    # Fetch more details from PagerDuty
-    my $event_details = pagerduty_get_event_details($self_url);
+    my @pagerduty_alerts = @{ pagerduty_get_incident_alerts($self_url) };
 
-    # Those more details from PD should include info to work out the zabbix
-    # event id for use with the Zabbix API
-    my $zabbix_event_id = zabbix_get_event_id($event_details);
+    warn( "pagerduty_alerts count: " . scalar(@pagerduty_alerts), "\n" ) if $DEBUG >= 2;
 
-    # If we couldn't work out a zabbix event id, we can't update zabbix.
-    # In case this was due to transient PagerDuty API issues, return "429"
-    # to tell PD to try the webhook again a bit later.
-    # Check PD WebHook docs for retry limits.
-    unless ($zabbix_event_id) {
-        print $cgi->header( -status => "429 Can't determine zabbix event id; retry" );
-        die "Unable to determine zabbix event id";
+    if ( scalar(@pagerduty_alerts) <= 0 ) {
+        warn("No alerts found, trying get_incident_details\n") if $DEBUG >= 1;
+        push @pagerduty_alerts, pagerduty_get_incident_details($self_url);
     }
 
-    # Do appropriate actions on incident event types
+    foreach my $pagerduty_alert (@pagerduty_alerts) {
+        warn( "alert: " . $j->encode($pagerduty_alert) . "\n" ) if $DEBUG >= 2;
+        my $zabbix_event_id = zabbix_get_event_id_from_pd_object($pagerduty_alert);
+        local $@;    # exception-handling
 
-    # triggered==created (or maybe also end of silencing)
-    if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate') ) {
+        # If we couldn't work out a zabbix event id, we can't update zabbix.
+        # In case this was due to transient PagerDuty API issues, return "429"
+        # to tell PD to try the webhook again a bit later.
+        # Check PD WebHook docs for retry limits.
+        unless ($zabbix_event_id) {
+            print $cgi->header( -status => "429 Can't determine zabbix event id; retry" );
+            warn "Unable to determine zabbix event id";
+            next;
+        }
 
-        # Add PD incident URL as comment on Zabbix event:
-        zabbix_event_annotate( $zabbix_event_id, $html_url );
-    }
+        # Do appropriate actions on incident event types
 
-    # The original main reason for this: PD ACK to Zabbix ACK
-    elsif ( $event_type eq 'incident.acknowledged' ) {
+        # triggered==created (or maybe also end of silencing)
+        if ( $event_type eq 'incident.triggered' && $config->get('triggeredupdate') ) {
 
-        # Update Zabbix event acknowledgement
-        zabbix_event_acknowledge( $zabbix_event_id, $event, $event_details );
-    }
+            # Add PD incident URL as comment on Zabbix event:
+            eval { zabbix_event_annotate( $zabbix_event_id, $html_url ) };
+        }
 
-    # And UNACK
-    elsif ( $event_type eq 'incident.unacknowledged' ) {
+        # The original main reason for this: PD ACK to Zabbix ACK
+        elsif ( $event_type eq 'incident.acknowledged' ) {
 
-        # Clear acknowledgement from zabbix event
-        zabbix_event_unacknowledge( $zabbix_event_id, $event, $event_details );
-    }
+            # Update Zabbix event acknowledgement
+            eval { zabbix_event_acknowledge( $zabbix_event_id, $event, $pagerduty_alert ) };
+        }
 
-    # If a note is added in PD (if note added when doing another action,
-    # sends webhook for both that action and the note)
-    elsif ( $event_type eq 'incident.annotated' ) {
+        # And UNACK
+        elsif ( $event_type eq 'incident.unacknowledged' ) {
 
-        # Add comment to zabbix event when PD event gets a note
-        my $who     = $event->{'agent'}{'summary'};
-        my $content = $event->{'data'}{'content'};
-        $who ||= "PD";
-        my $message = "$content -$who";
+            # Clear acknowledgement from zabbix event
+            eval { zabbix_event_unacknowledge( $zabbix_event_id, $event, $pagerduty_alert ) };
+        }
 
-        zabbix_event_annotate( $zabbix_event_id, $message );
-    }
+        # If a note is added in PD (if note added when doing another action,
+        # sends webhook for both that action and the note)
+        elsif ( $event_type eq 'incident.annotated' ) {
 
-    # If someone clicks "resolve" in PD, try to close the Zabbix event
-    elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate') ) {
+            # Add comment to zabbix event when PD event gets a note
+            my $who     = $event->{'agent'}{'summary'};
+            my $content = $event->{'data'}{'content'};
+            $who ||= "PD";
+            my $message = "$content -$who";
 
-        # Send event close attempt to Zabbix
-        zabbix_event_close( $zabbix_event_id, $event, $event_details );
-    }
+            eval { zabbix_event_annotate( $zabbix_event_id, $message ) };
+        }
 
-    # If priority changed in PD, update zabbix event severity to match
-    # TODO: make this configurable?
-    elsif ( $event_type eq 'incident.priority_updated' ) {
+        # If someone clicks "resolve" in PD, try to close the Zabbix event
+        elsif ( $event_type eq 'incident.resolved' && $config->get('resolvedupdate') ) {
 
-        # Update Zabbix event severity if PD incident priority changed
-        zabbix_event_update_priority( $zabbix_event_id, $event, $event_details );
-    }
+            # Send event close attempt to Zabbix
+            eval { zabbix_event_close( $zabbix_event_id, $event, $pagerduty_alert ) };
+        }
 
-    # If don't know what to do, log it.  Not an error, since could have
-    # simply accepted the default of WebHook sending all event types.
-    else {
-        warn("Don't know how to handle event type $event_type\n");
+        # If priority changed in PD, update zabbix event severity to match
+        # TODO: make this configurable?
+        elsif ( $event_type eq 'incident.priority_updated' ) {
+
+            # Update Zabbix event severity if PD incident priority changed
+            eval { zabbix_event_update_priority( $zabbix_event_id, $event, $pagerduty_alert ) };
+        }
+
+        # If don't know what to do, log it.  Not an error, since could have
+        # simply accepted the default of WebHook sending all event types.
+        else {
+            warn("Don't know how to handle event type $event_type\n");
+        }
+
+        if ( my $exception = $@ ) {
+            warn $exception;
+        }
     }
 
     # Other PD event types that we don't currently do anything with:
@@ -299,14 +351,29 @@ sub pagerduty_handle_webhook {
     #    "incident.status_update_published",
 }
 
+# If event.data.event_type=incident.resolved and event.data.resolve_reason.type=merge_resolve_reason
+# Then tell Zabbix that "parent" (event.data.resolve_reason.incident.self) is a "cause",
+# and that "child" (event.data.self) is a "symptom" with cause_eventid of parent.
+sub pagerduty_handle_merged_incidents {
+    warn( "pagerduty_handle_merged_incidents args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
+    my ($event)         = @_;
+    my $parent_incident = pagerduty_get_incident_details( $event->{'data'}{'resolve_reason'}{'incident'}{'self'} );
+    my $child_incident  = pagerduty_get_incident_details( $event->{'data'}{'self'} );
+    my $parent_id       = zabbix_get_event_id_from_pd_object($parent_incident);
+    my $child_id        = zabbix_get_event_id_from_pd_object($child_incident);
+
+    zabbix_events_merge( $parent_id, $child_id, $event );
+}
+
 # Use PD event API to get additional details on the incident.
 # Needed for fetching info that includes the zabbix event ID for the zabbix API.
-sub pagerduty_get_event_details {
+sub pagerduty_get_incident_details {
+    warn( "pagerduty_get_incident_details args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
     my ($self_url) = @_;
     my $pdtoken = $config->get('pdtoken');
 
     my $pd_response = $ua->get( "${self_url}?include[]=body", 'Authorization' => "Token token=${pdtoken}", );
-    warn( to_json( $pd_response, { allow_blessed => 1 } ) ) if $DEBUG >= 4;
+    warn( $j->encode($pd_response) ) if $DEBUG >= 4;
     if ( $pd_response->is_success ) {
         my $pd_json_content = $pd_response->content();
         my $content         = decode_json($pd_json_content);
@@ -318,33 +385,108 @@ sub pagerduty_get_event_details {
 
 }
 
+# Use PD event/incident API to get a list of alerts on the incident
+sub pagerduty_get_incident_alerts {
+    warn( "pagerduty_get_incident_alerts args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
+    my ($self_url) = @_;
+    my $pdtoken = $config->get('pdtoken');
+
+    warn("pagerduty_get_incident_alerts: self_url: $self_url\n") if $DEBUG >= 2;
+
+    my $pd_response = $ua->get( "${self_url}/alerts", 'Authorization' => "Token token=${pdtoken}", );
+    warn( $j->encode($pd_response) ) if $DEBUG >= 4;
+    if ( $pd_response->is_success ) {
+        my $pd_json_content = $pd_response->content();
+        my $content         = decode_json($pd_json_content);
+        return $content->{'alerts'};
+    }
+    else {
+        warn "Unable to fetch alerts from PagerDuty\n";
+        warn $pd_response->as_string() . "\n";
+        die;
+    }
+
+}
+
 # Get the Zabbix event ID associated with a PagerDuty incident
 # TODO: explore backup options in case dedup_key not there... zabbix URL has it, for instance.
-sub zabbix_get_event_id {
-    my ($event_details) = @_;
+sub zabbix_get_event_id_from_pd_object {
+    warn( "zabbix_get_event_id_from_pd_object args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
+    my ($pagerduty_details) = @_;
     my $eventid = '';
 
-    # Primary place we find the eventid:
-    $eventid = $event_details->{'body'}{'details'}{'dedup_key'};
+    # Best place to find it in an alert:
+    $eventid = $pagerduty_details->{'alert_key'};
 
-    # Second place to look for eventid:
+    # Next best place to try in an alert:
     unless ($eventid) {
-        $eventid = $event_details->{'body'}{'details'}{'__pd_cef_payload'}{'dedup_key'};
+        $eventid = $pagerduty_details->{'body'}{'cef_details'}{'dedup_key'};
+    }
+
+    # First place look in incident details:
+    unless ($eventid) {
+        $eventid = $pagerduty_details->{'body'}{'details'}{'dedup_key'};
+    }
+
+    # Second place to look for eventid in incedent details:
+    unless ($eventid) {
+        $eventid = $pagerduty_details->{'body'}{'details'}{'__pd_cef_payload'}{'dedup_key'};
     }
 
     # If don't find event id on its own, try parsing out of the URL to the zabbix event
     unless ($eventid) {
-        my $zabbixurl = $event_details->{'body'}{'details'}{'links'}[0]{'href'};
-        $zabbixurl ||= $event_details->{'body'}{'details'}{'contexts'}[0]{'href'};
-        if ( $zabbixurl =~ m/[?&]eventid=(\d+)/ ) {
+        my $zabbixurl = '';
+
+        # First place to find zabbix event URL in an alert
+        $zabbixurl ||= $pagerduty_details->{'body'}{'contexts'}[0]{'href'};
+
+        # Second place to find zabbix event URL in an alert
+        $zabbixurl ||= $pagerduty_details->{'body'}{'cef_details'}{'contexts'}[0]{'href'};
+
+        # First place to find zabbix event URL in an incident
+        $zabbixurl ||= $pagerduty_details->{'body'}{'details'}{'links'}[0]{'href'};
+
+        # Second place to find zabbix event URL in an incident
+        $zabbixurl ||= $pagerduty_details->{'body'}{'details'}{'contexts'}[0]{'href'};
+        if ( $zabbixurl && $zabbixurl =~ m/[?&]eventid=(\d+)/ ) {
             $eventid = $1;
         }
     }
     return $eventid;
 }
 
+# Merge child into parent as symptom/cause
+sub zabbix_events_merge {
+    warn( "zabbix_events_merge args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
+    my ( $parent_zabbix_event_id, $child_zabbix_event_id, $event ) = @_;
+    my $who = $event->{'agent'}{'summary'};
+    $who ||= 'API';
+    warn("Merging $child_zabbix_event_id into $parent_zabbix_event_id by $who\n") if $DEBUG;
+
+    my $message = "Merged in PD by $who";
+
+    # First, make sure the parent is a "cause":
+    my %parent_params = (
+        eventids => $parent_zabbix_event_id,
+        action   => ZABBIX_CHANGE_TO_CAUSE,
+    );
+    warn( "zabbix_events_merge parent_params: " . $j->encode( \%parent_params ) ) if $DEBUG >= 2;
+    zabbix_event_update(%parent_params);
+
+    # Then mark the child as a symptom of the parent and comment how that happened
+    my %child_params = (
+        eventids      => $child_zabbix_event_id,
+        action        => ZABBIX_CHANGE_TO_SYMPTOM ^ ZABBIX_ADD_MSG,
+        cause_eventid => $parent_zabbix_event_id,
+        message       => $message,
+    );
+    warn( "zabbix_events_merge child_params: " . $j->encode( \%child_params ) ) if $DEBUG >= 2;
+    zabbix_event_update(%child_params);
+}
+
 # Add a message to the zabbix event.
 sub zabbix_event_annotate {
+    warn( "zabbix_event_annotate args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
     my ( $zabbix_event_id, $message ) = @_;
     warn("Annotating Zabbix event $zabbix_event_id with message: $message\n") if $DEBUG;
 
@@ -353,13 +495,14 @@ sub zabbix_event_annotate {
         action   => ZABBIX_ADD_MSG,     # bit-math
         message  => $message
     );
-    warn( "zabbix_event_update params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    warn( "zabbix_event_update params: " . $j->encode( \%params ) ) if $DEBUG >= 2;
     zabbix_event_update(%params);
 }
 
 # Update Zabbix event w/acknowledgement.
 # Includes a "ACK'd in PD by $person" note.
 sub zabbix_event_acknowledge {
+    warn( "zabbix_event_acknowledge args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
     my $message = "ACK'd in PD";
@@ -373,7 +516,7 @@ sub zabbix_event_acknowledge {
         action   => ZABBIX_ACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    warn( "zabbix_event_update params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    warn( "zabbix_event_update params: " . $j->encode( \%params ) ) if $DEBUG >= 2;
     zabbix_event_update(%params);
 
 }
@@ -381,6 +524,7 @@ sub zabbix_event_acknowledge {
 # Update Zabbix event w/unacknowledgement.
 # Includes an "un-ACK'd in PD by $person" note.
 sub zabbix_event_unacknowledge {
+    warn( "zabbix_event_unacknowledge args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who     = $event->{'agent'}{'summary'};
     my $message = "un-ACK'd in PD";
@@ -394,7 +538,7 @@ sub zabbix_event_unacknowledge {
         action   => ZABBIX_UNACK ^ ZABBIX_ADD_MSG,    # bit-math
         message  => $message
     );
-    warn( "zabbix_event_update params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    warn( "zabbix_event_update params: " . $j->encode( \%params ) ) if $DEBUG >= 2;
     zabbix_event_update(%params);
 
     # TODO:
@@ -406,6 +550,7 @@ sub zabbix_event_unacknowledge {
 # Adds a "Resolved in PD by $person" note.
 # Note: can only close some events and silently ignores when it can't.
 sub zabbix_event_close {
+    warn( "zabbix_event_close args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who = $event->{'agent'}{'summary'};
 
@@ -422,7 +567,7 @@ sub zabbix_event_close {
         message  => $message
     );
 
-    warn( "zabbix_event_update ack_params: " . to_json( \%ack_params ) ) if $DEBUG >= 2;
+    warn( "zabbix_event_update ack_params: " . $j->encode( \%ack_params ) ) if $DEBUG >= 2;
     zabbix_event_update(%ack_params);
 
     warn("Resolving Zabbix event $zabbix_event_id\n") if $DEBUG;
@@ -431,7 +576,7 @@ sub zabbix_event_close {
         eventids => $zabbix_event_id,
         action   => ZABBIX_CLOSE,                   # bit-math
     );
-    warn( "zabbix_event_update close_params: " . to_json( \%close_params ) ) if $DEBUG >= 2;
+    warn( "zabbix_event_update close_params: " . $j->encode( \%close_params ) ) if $DEBUG >= 2;
     zabbix_event_update(%close_params);
 
     # TODO:
@@ -442,6 +587,7 @@ sub zabbix_event_close {
 # Update zabbix event priority
 # TODO: make this configurable?
 sub zabbix_event_update_priority {
+    warn( "zabbix_event_update_priority args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who        = $event->{'agent'}{'summary'};
     my %priorities = (
@@ -466,7 +612,7 @@ sub zabbix_event_update_priority {
         message  => $message,
         severity => $zabbix_severity,
     );
-    warn( "zabbix_event_update params: " . to_json( \%params ) ) if $DEBUG >= 2;
+    warn( "zabbix_event_update params: " . $j->encode( \%params ) ) if $DEBUG >= 2;
     zabbix_event_update(%params);
 
     # TODO:
@@ -480,6 +626,7 @@ sub zabbix_event_update_priority {
 # Makes multiple attempts, in case a clustered config has something down. With slight backoff.
 # TODO: make retry stuff configurable.
 sub zabbix_event_update {
+    warn( "zabbix_event_update args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
     my %params = @_;
 
     warn("Updating zabbix event\n") if $DEBUG >= 2;
@@ -523,17 +670,17 @@ OUTER: for my $zabbixbaseurl (@$zabbixbaseurls) {
             );
 
             if ( $zabbixresponse && $zabbixresponse->is_success ) {
-                warn("Zabbix API update successful on try $zabbixretries\n") if $DEBUG;
-                warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
+                warn("Zabbix API update successful on try $zabbixretries\n")   if $DEBUG;
+                warn( "Response from Zabbix: " . $j->encode($zabbixresponse) ) if $DEBUG >= 2;
                 last OUTER;
             }
             else {
                 warn("Zabbix API attempt $zabbixretries\n")
                     if ( $DEBUG >= 2 or ( $DEBUG >= 1 and $zabbixretries >= 3 ) );
-                warn( "Response from Zabbix: " . to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 2;
+                warn( "Response from Zabbix: " . $j->encode($zabbixresponse) ) if $DEBUG >= 2;
 
                 if ( $zabbixretries >= $maxretries ) {
-                    warn to_json( $zabbixresponse, { allow_blessed => 1 } );
+                    warn $j->encode($zabbixresponse);
                     warn "Couldn't talk to zabbix API after $zabbixretries attempts.\n";
                     next OUTER;
                 }
@@ -546,5 +693,5 @@ OUTER: for my $zabbixbaseurl (@$zabbixbaseurls) {
         }
     }
 
-    warn( to_json( $zabbixresponse, { allow_blessed => 1 } ) ) if $DEBUG >= 4;
+    warn( $j->encode($zabbixresponse) ) if $DEBUG >= 4;
 }

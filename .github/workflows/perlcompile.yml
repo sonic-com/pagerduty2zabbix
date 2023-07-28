@@ -51,6 +51,9 @@ jobs:
       # Install a specific version of Test::Deep when testing with perl 5.10.0
       - run: perl -e 'use 5.12.0;' || cpanm --install Test::Deep@1.130
 
+      # Requirement that gets an incompatible version on perl5.10 compilation tests
+      - run: perl -e 'use 5.011;' || cpanm --install IO::Socket::IP@0.41
+
       # Install the dependencies declared by the module ...
       - run: cpanm --installdeps --skip-satisfied .
 
