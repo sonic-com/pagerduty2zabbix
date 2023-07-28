@@ -79,6 +79,11 @@ our $config = AppConfig->new(
         DEFAULT  => 0,
         ARGCOUNT => ARGCOUNT_ONE,
     },
+    pdmergeaction => {
+        DEFAULT => 'ignore',
+        ARGCOUNT => ARGCOUNT_ONE,
+        VALIDATE => qr/^(merge|ignore|resolve)$/,
+    },
 );
 
 # JSON object for future use
@@ -224,11 +229,20 @@ sub pagerduty_handle_webhook {
         return 1;
     }
 
-    # Special case: merging incidents
+    # Special case: merged incidents
     if ( $event_type eq 'incident.resolved' && $event->{'data'}{'resolve_reason'}{'type'} eq 'merge_resolve_reason' ) {
-        warn("Merging this incident into another\n") if $DEBUG >= 1;
-        pagerduty_handle_merged_incidents($event);
-        return 1;
+        warn("PD events merged...\n") if $DEBUG >= 1;
+
+        if ($config->get('pdmergeaction') eq 'merge' ) {
+            warn("Merging this incident into another\n") if $DEBUG >= 1;
+            pagerduty_handle_merged_incidents($event);
+            return 1;
+        } elsif ($config->get('pdmergeaction') eq 'ignore') {
+            warn("Ignoring PD incident merge\n") if $DEBUG >= 1;
+            return 1;
+        } else {
+            warn("Falling through to default of resolving children\n") if $DEBUG >= 1;
+        }
     }
 
     # Get the PD event API endpoint for this event
