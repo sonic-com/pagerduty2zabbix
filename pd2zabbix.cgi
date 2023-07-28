@@ -230,8 +230,8 @@ sub pagerduty_handle_webhook {
 
     # Special case: merged incidents
     if ( $event_type eq 'incident.resolved' && $event->{'data'}{'resolve_reason'}{'type'} eq 'merge_resolve_reason' ) {
-        warn("PD events merged...\n") if $DEBUG >= 1;
-        warn("pdmergeaction=".$config->get('pdmergeaction')."\n") if $DEBUG >= 2;
+        warn("PD events merged...\n")                                   if $DEBUG >= 1;
+        warn( "pdmergeaction=" . $config->get('pdmergeaction') . "\n" ) if $DEBUG >= 2;
 
         if ( $config->get('pdmergeaction') eq 'merge' ) {
             warn("Merging this incident into another\n") if $DEBUG >= 1;
