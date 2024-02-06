@@ -35,6 +35,40 @@ triggeredupdate=1
 # Allow PD to (try to) close zabbix events when a PD incident is marked resolved?
 resolvedupdate=1
 
+# Have priority change in PD update the Severity in Zabbbix?
+priorityupdate=1
+
+# Zabbix severity levels for reference:
+# NOTCLASSIFIED => 0,
+# INFORMATION   => 1,
+# WARNING       => 2,
+# AVERAGE       => 3,
+# HIGH          => 4,
+# DISASTER      => 5,
+
+# PD_Priority=Zabbix_Severity
+# Needs to be updated if you change your priority levels in PD
+# Can have more than one PD priority label map to the same zabbix severity
+# level
+# Example config is designed to work with stock P1-P5 PD priorities or with
+# PD priorities set similarly to Zabbix Severities
+priorities P5=1
+priorities Info=1
+
+priorities P4=2
+priorities Low=2
+priorities Warning=2
+
+priorities P3=3
+priorities Average=3
+
+priorities P2=4
+priorities High=4
+
+priorities P1=5
+priorities Crit=5
+priorities Critical=5
+priorities Disaster=5
 
 
 # How to handle PD merge events.

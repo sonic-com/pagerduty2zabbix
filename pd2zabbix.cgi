@@ -83,6 +83,20 @@ our $config = AppConfig->new(
         DEFAULT  => 'ignore',
         ARGCOUNT => ARGCOUNT_ONE,
     },
+    priorityupdate => {
+        DEFAULT  => 0,
+        ARGCOUNT => ARGCOUNT_ONE,
+    },
+    priorities => {
+        DEFAULT  => {
+            P5 => ZABBIX_SEV_INFORMATION,
+            P4 => ZABBIX_SEV_WARNING,
+            P3 => ZABBIX_SEV_AVERAGE,
+            P2 => ZABBIX_SEV_HIGH,
+            P1 => ZABBIX_SEV_DISASTER,
+        },
+        ARGCOUNT => ARGCOUNT_HASH,
+    },
 );
 
 # JSON object for future use
@@ -104,7 +118,7 @@ foreach my $config_path (@config_paths) {
 # Pull DEBUG value out for ease of use and some debug output...
 if ($found_config) {
     $DEBUG = $config->get('debug');
-    warn("Config used: $config_path_used\n") if $DEBUG;
+    warn("Config used: $config_path_used\n") if $DEBUG >= 1;
     my %vars = $config->varlist('.');
     warn( "Config: " . $j->encode( \%vars ) . "\n" ) if $DEBUG >= 3;
 }
@@ -324,8 +338,7 @@ sub pagerduty_handle_webhook {
 
         # If priority changed in PD, update zabbix event severity to match
         # TODO: make this configurable?
-        elsif ( $event_type eq 'incident.priority_updated' ) {
-
+        elsif ( $event_type eq 'incident.priority_updated' && $config->get('priorityupdate')) {
             # Update Zabbix event severity if PD incident priority changed
             eval { zabbix_event_update_priority( $zabbix_event_id, $event, $pagerduty_alert ) };
         }
@@ -333,7 +346,7 @@ sub pagerduty_handle_webhook {
         # If don't know what to do, log it.  Not an error, since could have
         # simply accepted the default of WebHook sending all event types.
         else {
-            warn("Don't know how to handle event type $event_type\n");
+            warn("Don't know how to handle event type $event_type or nothing configured for that event type\n");
         }
 
         if ( my $exception = $@ ) {
@@ -590,13 +603,8 @@ sub zabbix_event_update_priority {
     warn( "zabbix_event_update_priority args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who        = $event->{'agent'}{'summary'};
-    my %priorities = (
-        P5 => ZABBIX_SEV_INFORMATION,
-        P4 => ZABBIX_SEV_WARNING,
-        P3 => ZABBIX_SEV_AVERAGE,
-        P2 => ZABBIX_SEV_HIGH,
-        P1 => ZABBIX_SEV_DISASTER,
-    );
+    my %priorities = %{$config->get('priorities')};
+    
     my $pd_priority     = $event->{'data'}{'priority'}{'summary'};
     my $zabbix_severity = $priorities{$pd_priority} || ZABBIX_SEV_NOTCLASSIFIED;
     my $message         = "PD Priority changed to $pd_priority";
