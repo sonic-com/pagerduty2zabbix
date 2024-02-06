@@ -88,7 +88,7 @@ our $config = AppConfig->new(
         ARGCOUNT => ARGCOUNT_ONE,
     },
     priorities => {
-        DEFAULT  => {
+        DEFAULT => {
             P5 => ZABBIX_SEV_INFORMATION,
             P4 => ZABBIX_SEV_WARNING,
             P3 => ZABBIX_SEV_AVERAGE,
@@ -338,7 +338,8 @@ sub pagerduty_handle_webhook {
 
         # If priority changed in PD, update zabbix event severity to match
         # TODO: make this configurable?
-        elsif ( $event_type eq 'incident.priority_updated' && $config->get('priorityupdate')) {
+        elsif ( $event_type eq 'incident.priority_updated' && $config->get('priorityupdate') ) {
+
             # Update Zabbix event severity if PD incident priority changed
             eval { zabbix_event_update_priority( $zabbix_event_id, $event, $pagerduty_alert ) };
         }
@@ -603,15 +604,15 @@ sub zabbix_event_update_priority {
     warn( "zabbix_event_update_priority args: " . $j->encode( \@_ ) . "\n" ) if $DEBUG >= 5;
     my ( $zabbix_event_id, $event, $event_details ) = @_;
     my $who        = $event->{'agent'}{'summary'};
-    my %priorities = %{$config->get('priorities')};
-    
+    my %priorities = %{ $config->get('priorities') };
+
     my $pd_priority     = $event->{'data'}{'priority'}{'summary'};
     my $zabbix_severity = $priorities{$pd_priority} || ZABBIX_SEV_NOTCLASSIFIED;
-    if($zabbix_severity == ZABBIX_SEV_NOTCLASSIFIED) {
-       warn("Couldn't figure out mapping for PD-priority to Zabbix-severity");
-       die("Refusing to set Zabbix event severity to Not Classified");
+    if ( $zabbix_severity == ZABBIX_SEV_NOTCLASSIFIED ) {
+        warn("Couldn't figure out mapping for PD-priority to Zabbix-severity");
+        die("Refusing to set Zabbix event severity to Not Classified");
     }
-    my $message         = "PD Priority changed to $pd_priority";
+    my $message = "PD Priority changed to $pd_priority";
     if ( defined $who ) {
         $message .= " by $who";
     }
