@@ -607,6 +607,10 @@ sub zabbix_event_update_priority {
     
     my $pd_priority     = $event->{'data'}{'priority'}{'summary'};
     my $zabbix_severity = $priorities{$pd_priority} || ZABBIX_SEV_NOTCLASSIFIED;
+    if($zabbix_severity == ZABBIX_SEV_NOTCLASSIFIED) {
+       warn("Couldn't figure out mapping for PD-priority to Zabbix-severity");
+       die("Refusing to set Zabbix event severity to Not Classified");
+    }
     my $message         = "PD Priority changed to $pd_priority";
     if ( defined $who ) {
         $message .= " by $who";
