@@ -1,0 +1,6 @@
+---
+repos:
+-   repo: https://github.com/perltidy/perltidy
+    rev: "20240903"
+    hooks:
+      - id: perltidy
